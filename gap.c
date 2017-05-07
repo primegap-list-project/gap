@@ -1,4 +1,5 @@
 // Search for large primegaps, written by Robert Gerbicz
+// version 0.02
 
 // my long compilation line: gcc -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap.c -lm
 // don't forget -fopenmp  [for OpenMP]
@@ -15,6 +16,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include "omp.h" // for multithreading, need gcc >= 4.2
+
+#define version "0.02"
 
 typedef unsigned int ui32;
 typedef signed int si32;
@@ -60,6 +63,7 @@ typedef unsigned long long int ui64;
 
 #define MAX_SIZE (1LL<<29) // in bytes for offsets array, to save some space (0.5-1 GB) lower this 
                            // to say (1LL<<24), but that will give a slower sieve
+                           // this can be also non-power of two
 
 #define MAX_NUM_SOLUTIONS 1024 // max. number of solutions per thread, we still can print/save results if
                              // there would be more solutions
@@ -67,6 +71,7 @@ typedef unsigned long long int ui64;
 #define ALIGNEMENT 4096 // alignement (in bytes!)
                         // it could be say (1<<bucket_size_log2), and at least 64.
                         // or a higher power of two, but that gives no speedup
+                        // [it should be a power of two]
 
 // *******************
 
@@ -201,8 +206,6 @@ typedef struct{
 ui32 offset;
 ui32 pr;  // prime number
 }bucket;
-
-bucket *p_data;
 
 typedef struct {
 ui32 gap;
@@ -1145,6 +1148,7 @@ void ff(void){
     int first_run=1;
     ui32 mid_res=0;
     
+    printf("Program version number=%s;\n",version);
     printf("Start the main algorithm; date: ");print_time();
     printf("\ninterval=[%llu,%llu]; now at n=%llu;\n",first_n,last_n,n0);
     printf("gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB\n",
@@ -1333,7 +1337,13 @@ void ff(void){
             }
         }
         
-        qsort(my_gap,ns,sizeof(GAP),comp);
+        //qsort(my_gap,ns,sizeof(GAP),comp);
+        int l1,l2;
+        // bubble sort
+        for(l1=0;l1<ns;l1++)for(l2=0;l1+l2+1<ns;l2++)if(my_gap[l2].p1>my_gap[l2+1].p1){
+            ui32 t1=my_gap[l2].gap;my_gap[l2].gap=my_gap[l2+1].gap;my_gap[l2+1].gap=t1;
+            ui64 t2=my_gap[l2].p1; my_gap[l2].p1=my_gap[l2+1].p1;  my_gap[l2+1].p1=t2;}
+        
         FILE* fout;
         fout=fopen("gap_solutions.txt","a+");
         for(i=0;i<ns;i++)if(i==0||my_gap[i].p1>my_gap[i-1].p1){
@@ -1357,14 +1367,14 @@ void ff(void){
         print_time();printf("\n");
         
         fout=fopen("gap_log.txt","a+");
-        fprintf(fout,"Done interval=[%llu,%llu] with gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB.\n",
-            imax64(first_n,(ui64)first_k*mod),nn,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
+        fprintf(fout,"Done interval=[%llu,%llu] with version=%s;gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB.\n",
+            imax64(first_n,(ui64)first_k*mod),nn,version,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
         fclose(fout);
     }
     FILE* fout;
     fout=fopen("results_gap.txt","a+");
-    fprintf(fout,"Done interval=[%llu,%llu] with gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB.\n",
-            first_n,last_n,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
+    fprintf(fout,"Done interval=[%llu,%llu] with version=%s;gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB.\n",
+            first_n,last_n,version,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
     fclose(fout);
     remove("worktodo_gap.txt");
 
