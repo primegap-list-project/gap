@@ -1,7 +1,7 @@
 // Search for large primegaps, written by Robert Gerbicz
-// version 0.02
+// version 0.03
 
-// my long compilation line: gcc -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap.c -lm
+// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap3.c -lm
 // don't forget -fopenmp  [for OpenMP]
 // use your own processor type, mine is skylake
 
@@ -17,7 +17,7 @@
 #include <sys/resource.h>
 #include "omp.h" // for multithreading, need gcc >= 4.2
 
-#define version "0.02"
+#define version "0.03"
 
 typedef unsigned int ui32;
 typedef signed int si32;
@@ -42,7 +42,7 @@ typedef unsigned long long int ui64;
                             // currently the smallest unknown case is gap=1346
                             // see http://www.trnicely.net/gaps/gaplist.html
 
-#define default_gap_delta 188 // we will sieve mingap2*k+[0,gap_delta) intervals
+#define default_gap_delta 196 // we will sieve mingap2*k+[0,gap_delta) intervals
 
 // *******************
 // modify these 6 constants here, we won't input this:
@@ -50,7 +50,7 @@ typedef unsigned long long int ui64;
                              // in most of the cases. note that if you would use save_nextprimetest=0
                              //  to save memory (but get slower sieve!)
                              //  then the optimal gap_delta should be larger by roughly 10,
-                             //  so in the high n range it should be 188+10=198 ( so close to 200 )
+                             //  so in the high n range it should be 196+10=206 ( so close to 200 )
                              //  [the hint about default_gap_delta is showing the delta for save_nextprimetest=1]
 
 #define default_report_gap 1000 // we print and save gap=p2-p1 iff gap>=default_report_gap or gap>=mingap
@@ -93,6 +93,10 @@ int gap_delta;       // Use the -delta switch
 #define MP64  0xffffffffffffffc5 // precprime(2^64)=2^64-59
 #define size_ui32 (sizeof(ui32)) // at least 4
 #define size_ui64 (sizeof(ui64)) // it should be 8
+
+
+#define get_lsb(a) (__builtin_ffsll(a)-1)
+#define bitlen(a)  (64-__builtin_clzll(a))
 
 ui32 *inv_mod;
 ui64 *isprime_table;
@@ -217,8 +221,6 @@ int comp(const void *a,const void *b){
   return(gap2->p1<gap1->p1);
 }
 
-ui32 bitlen(ui64);
-
 void print_time(void){
     time_t timer;
     char w[128];
@@ -253,18 +255,6 @@ ui64 conv64(char w[]){
     return v;
 }
     
-ui32 get_lsb(ui64 n){
-    
-   ui32 ret=0;
-   if((n&0xffffffff)==0){n>>=32;ret+=32;}
-   if((n&0xffff)==0)    {n>>=16;ret+=16;}
-   if((n&0xff)==0)      {n>>=8;ret+=8;}
-   if((n&0xf)==0)       {n>>=4;ret+=4;}
-   if((n&0x3)==0)       {n>>=2;ret+=2;}
-   if((n&0x1)==0)       ret++;
-   return ret;
-}
-
 ui32 lin_solve(ui64 f,ui32 mod,ui32 res,ui32 p){
 // Solve (x+f)*mod+res==0 modulo p
 // assume that gcd(p,mod)=1
@@ -308,18 +298,6 @@ ui64 mulmod(ui64 a,ui64 b,ui64 n) {// (a*b)%n
          :"cc" /* imulq and idivq can set conditions */
         );
     return d;
-}
-
-ui32 bitlen(ui64 n){
-    
-    ui32 ret=1;
-    if(n>0xffffffff){ret+=32;n>>=32;}
-    if(n>0xffff)    {ret+=16;n>>=16;}
-    if(n>0xff)      {ret+=8;n>>=8;}
-    if(n>0xf)       {ret+=4;n>>=4;}
-    if(n>0x3)       {ret+=2;n>>=2;}
-    if(n>0x1)       ret++;
-    return ret;
 }
 
 ui64 fermatpowmod2_63(ui64 n){// n>0, return (2^(n-1)) mod n, assume that n<2^63
