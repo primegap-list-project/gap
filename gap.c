@@ -1,7 +1,7 @@
 // Search for large primegaps, written by Robert Gerbicz
-// version 0.03
+// version 0.05
 
-// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap3.c -lm
+// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap5.c -lm
 // don't forget -fopenmp  [for OpenMP]
 // use your own processor type, mine is skylake
 
@@ -9,9 +9,9 @@
 //
 //my compile lines:
 //
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=sandybridge -march=sandybridge -o gap3_4_sandybridge gap3_4.c -lm
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=ivybridge -march=ivybridge -o gap3_4_ivybridge gap3_4.c -lm
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx2 -mtune=haswell -march=haswell -o gap3_4_haswell gap3_4.c -lm
+//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=sandybridge -march=sandybridge -o gap5_sandybridge gap5.c -lm
+//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=ivybridge -march=ivybridge -o gap5_ivybridge gap5.c -lm
+//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx2 -mtune=haswell -march=haswell -o gap5_haswell gap5.c -lm
 //If your version of gcc supports later processors then substitute in -mtune and -march for the appropriate processor.
 //
 //[\Antonio]
@@ -28,7 +28,7 @@
 #include <sys/resource.h>
 #include "omp.h" // for multithreading, need gcc >= 4.2
 
-#define version "0.03.04"
+#define version "0.05"
 
 typedef unsigned int ui32;
 typedef signed int si32;
@@ -195,7 +195,7 @@ static const ui64 InvBits[64]={// InvBits[i]=2^64-1-2^i for masking
 0xfeffffffffffffff,0xfdffffffffffffff,0xfbffffffffffffff,0xf7ffffffffffffff,
 0xefffffffffffffff,0xdfffffffffffffff,0xbfffffffffffffff,0x7fffffffffffffff};
 
-static const int add30[8]={6,4,2,4,2,4,6,2};
+static const int add30[8]={2,6,4,2,4,2,4,6};
 static const int sub30[8]={2,6,4,2,4,2,4,6};
 
 static const int table_prev_prime[128]={
@@ -359,7 +359,7 @@ ui64 next_prime(ui64 n){
     if(n>MP64)return 0;// fake, overflow in 64 bits
     
     ui32 i;
-    ui64 n2=n+1-(n%30);
+    ui64 n2=n-1-(n%30);
 
     for(i=0;;i++){
         n2+=add30[i&7];
