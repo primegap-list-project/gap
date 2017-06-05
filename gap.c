@@ -1,17 +1,20 @@
 // Search for large primegaps, written by Robert Gerbicz
-// version 0.05
 
-// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap5.c -lm
+//Fermat & Euler-Plumb PRP tests using Montgomery math
+//written by Dana Jacobsen
+
+// version 0.05.d
+
+// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap3.c -lm
 // don't forget -fopenmp  [for OpenMP]
 // use your own processor type, mine is skylake
 
 //[Antonio/]
 //
 //my compile lines:
-//
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=sandybridge -march=sandybridge -o gap5_sandybridge gap5.c -lm
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=ivybridge -march=ivybridge -o gap5_ivybridge gap5.c -lm
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx2 -mtune=haswell -march=haswell -o gap5_haswell gap5.c -lm
+//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=sandybridge -march=sandybridge -o gap5_d_sandybridge gap5_d.c -lm
+//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=ivybridge -march=ivybridge -o gap5_d_ivybridge gap5_d.c -lm
+//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx2 -mtune=haswell -march=haswell -o gap5_d_haswell gap5_d.c -lm
 //If your version of gcc supports later processors then substitute in -mtune and -march for the appropriate processor.
 //
 //[\Antonio]
@@ -28,7 +31,7 @@
 #include <sys/resource.h>
 #include "omp.h" // for multithreading, need gcc >= 4.2
 
-#define version "0.05"
+#define version "0.05.d"
 
 typedef unsigned int ui32;
 typedef signed int si32;
@@ -72,7 +75,7 @@ typedef unsigned long long int ui64;
                                //  sieve array, so a much larger memory
                                // note: this can be non-power of two also.
 
-#define MAX_SIZE (1LL<<29) // in bytes for offsets array, to save some space (0.5-1 GB) lower this 
+#define MAX_SIZE (1LL<<29) // in bytes for offsets array, to save some space (0.5-1 GB) lower this
                            // to say (1LL<<24), but that will give a slower sieve
                            // this can be also non-power of two
 
@@ -116,8 +119,8 @@ ui64 *isprime_table;
 static void usage(void){
     printf("Usage: gap [options]\n");
     printf("\nOptions:\n");
-    printf("  -n1 x        First number to check is x\n"); 
-    printf("  -n2 y        last number to check is y\n"); 
+    printf("  -n1 x        First number to check is x\n");
+    printf("  -n2 y        last number to check is y\n");
     printf("  -gap g       searching for gap>=g (default=%d)\n",default_mingap);
     printf("  -delta d     sieving on k*m+[0,d) intervals (default=%d)\n",default_gap_delta);
     printf("  -sb u        sieve uses 2^u bits of memory (default=%d)\n",default_sieve_bits_log2);
@@ -195,6 +198,7 @@ static const ui64 InvBits[64]={// InvBits[i]=2^64-1-2^i for masking
 0xfeffffffffffffff,0xfdffffffffffffff,0xfbffffffffffffff,0xf7ffffffffffffff,
 0xefffffffffffffff,0xdfffffffffffffff,0xbfffffffffffffff,0x7fffffffffffffff};
 
+//static const int add30[8]={6,4,2,4,2,4,6,2};
 static const int add30[8]={2,6,4,2,4,2,4,6};
 static const int sub30[8]={2,6,4,2,4,2,4,6};
 
@@ -266,7 +270,7 @@ ui64 conv64(char w[]){
     sscanf(w,"%llu",&v);
     return v;
 }
-    
+
 ui32 lin_solve(ui64 f,ui32 mod,ui32 res,ui32 p){
 // Solve (x+f)*mod+res==0 modulo p
 // assume that gcd(p,mod)=1
@@ -291,7 +295,7 @@ static double cpu_time(void){// known small code
 }
 
 ui32 isqrt64(ui64 n){// integer square root of n
-    
+
      ui32 ret,v,p2;
      for(ret=0,p2=inf31;p2;p2>>=1){
          v=ret+p2;
@@ -312,15 +316,17 @@ ui64 mulmod(ui64 a,ui64 b,ui64 n) {// (a*b)%n
     return d;
 }
 
+#if 0
+  /* Gerbicz */
 ui64 fermatpowmod2_63(ui64 n){// n>0, return (2^(n-1)) mod n, assume that n<2^63
-    
+
     if(n<=64)return (Bits[n-1]%n);
-    
+
     si32 i;
     ui64 n1=n-1;
     ui32 len=bitlen(n1);
     ui64 ret=Bits[n1>>(len-6)]%n,n2=n1>>1;
-    
+
     for(i=len-7;i>=0;i--){
         ret=mulmod(ret,ret,n);
         if((n1>>i)&1){//do ret=(2*ret)%n;
@@ -333,14 +339,14 @@ ui64 fermatpowmod2_63(ui64 n){// n>0, return (2^(n-1)) mod n, assume that n<2^63
 }
 
 ui64 fermatpowmod2(ui64 n){// return (2^(n-1)) mod n
-    
+
     if(n<inf63)return fermatpowmod2_63(n);
-    
+
     si32 i;
     ui64 n1=n-1;
     ui32 len=bitlen(n1);
     ui64 ret=Bits[n1>>(len-6)]%n,n2=n1>>1;
-    
+
     for(i=len-7;i>=0;i--){
         ret=mulmod(ret,ret,n);
         if((n1>>i)&1){
@@ -352,13 +358,111 @@ ui64 fermatpowmod2(ui64 n){// return (2^(n-1)) mod n
 }
 
 ui32 fermatprp2(ui64 n){return (fermatpowmod2(n)==1);}
+#else
+  /* Jacobsen / Izykowski */
+  static inline ui64 addmod(ui64 a, ui64 b, ui64 n) {
+    ui64 r = a+b;
+    ui64 t = a-n;
+    asm ("add %2, %1\n\t"    /* t := t + b */
+         "cmovc %1, %0\n\t"  /* if (carry) r := t */
+         :"+r" (r), "+&r" (t)
+         :"rm" (b)
+         :"cc"
+        );
+    return r;
+  }
+#define MPU_UNLIKELY(x) __builtin_expect(!!(x), 0)
+static inline ui64 mont_prod64(ui64 a, ui64 b, ui64 n, ui64 npi)
+{
+  ui64 t_hi, t_lo, m, mn_hi, mn_lo, u;
+  /* t_hi * 2^64 + t_lo = a*b */
+  asm("mulq %3" : "=a"(t_lo), "=d"(t_hi) : "a"(a), "rm"(b));
+  if (MPU_UNLIKELY(t_lo == 0)) return t_hi;  /* Allows carry=1 below */
+  m = t_lo * npi;
+  /* mn_hi * 2^64 + mn_lo = m*n */
+  asm("mulq %3" : "=a"(mn_lo), "=d"(mn_hi) : "a"(m), "rm"(n));
+  u = t_hi + mn_hi + 1;
+  return (u < t_hi || u >= n)  ?  u-n  :  u;
+}
+#define mont_square64(a, n, npi)  mont_prod64(a, a, n, npi)
+static inline ui64 mont_powmod64(ui64 a, ui64 k, ui64 one, ui64 n, ui64 npi)
+{
+  ui64 t = one;
+  while (k) {
+    if (k & 1) t = mont_prod64(t, a, n, npi);
+    k >>= 1;
+    if (k)     a = mont_square64(a, n, npi);
+  }
+  return t;
+}
+static inline ui64 modular_inverse64(const ui64 a)
+{
+  ui64 J, S = 1;
+  int idx;
+  /* Basic algorithm:
+   *    for (i = 0; i < 64; i++) {
+   *      if (S & 1)  {  J |= (1ULL << i);  S += a;  }
+   *      S >>= 1;
+   *    }
+   * What follows is 8 bits at a time, unrolled by hand. */
+  static const char mask[128] = {255,85,51,73,199,93,59,17,15,229,195,89,215,237,203,33,
+  31,117,83,105,231,125,91,49,47,5,227,121,247,13,235,65,63,149,115,137,7,157,123,81,79,
+  37,3,153,23,45,11,97,95,181,147,169,39,189,155,113,111,69,35,185,55,77,43,129,127,213,
+  179,201,71,221,187,145,143,101,67,217,87,109,75,161,159,245,211,233,103,253,219,177,175,
+  133,99,249,119,141,107,193,191,21,243,9,135,29,251,209,207,165,131,25,151,173,139,225,
+  223,53,19,41,167,61,27,241,239,197,163,57,183,205,171,1};
+
+  const char amask = mask[(a >> 1) & 127];
+  ui32 T;
+  idx = (amask*(S&255)) & 255;  J = idx;              S = (S+a*idx) >> 8;
+  idx = (amask*(S&255)) & 255;  J |= (ui64)idx << 8;  S = (S+a*idx) >> 8;
+  idx = (amask*(S&255)) & 255;  J |= (ui64)idx <<16;  S = (S+a*idx) >> 8;
+  idx = (amask*(S&255)) & 255;  J |= (ui64)idx <<24;  T = (S+a*idx) >> 8;
+  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<32;  T = (T+a*idx) >> 8;
+  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<40;  T = (T+a*idx) >> 8;
+  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<48;  T = (T+a*idx) >> 8;
+  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<56;
+  return J;
+}
+static inline ui64 compute_modn64(const ui64 n)
+{
+
+  if (n <= (1ULL << 63)) {
+    ui64 res = ((1ULL << 63) % n) << 1;
+    return res < n ? res : res-n;
+  } else
+    return -n;
+}
+#define mont_inverse(n)           modular_inverse64(n)
+#define mont_get1(n)              compute_modn64(n)
+#define mont_get2(n)              addmod(mont1,mont1,n)
+#define mont_powmod(a,k,n)        mont_powmod64(a,k,mont1,n,npi)
+ui32 fermatprp2(ui64 n){
+  //return (fermatpowmod2(n)==1);
+  /* n must be odd */
+  #if 0  /* Fermat */
+    const ui64 npi = mont_inverse(n),  mont1 = mont_get1(n);
+    const ui64 mont2 = mont_get2(n);
+    return mont_powmod(mont2, n-1, n) == mont1;
+  #else /* Euler-Plumb */
+    const ui64 npi = mont_inverse(n),  mont1 = mont_get1(n);
+    const ui64 mont2 = mont_get2(n);
+    ui32 nmod8 = n & 0x7;
+    ui64 ap = mont_powmod(mont2, (n-1) >> (1 + (nmod8 == 1)), n);
+    if (ap ==   mont1)  return (nmod8 == 1 || nmod8 == 7);
+    if (ap == n-mont1)  return (nmod8 == 1 || nmod8 == 3 || nmod8 == 5);
+    return 0;
+  #endif
+}
+#endif
 
 ui64 next_prime(ui64 n){
-    
+
     if(n<128) return table_next_prime[n];
     if(n>MP64)return 0;// fake, overflow in 64 bits
-    
+
     ui32 i;
+//    ui64 n2=n+1-(n%30);
     ui64 n2=n-1-(n%30);
 
     for(i=0;;i++){
@@ -369,10 +473,10 @@ ui64 next_prime(ui64 n){
 }
 
 ui64 prec_prime(ui64 n){
-    
+
     if(n<128)  return table_prev_prime[n];
     if(n>=MP64)return MP64;
-    
+
     ui32 i;
     ui64 n2=n+31-(n%30);
     for(i=0;;i++){
@@ -456,7 +560,7 @@ si64 single_modinv(si64 a,si64 modulus)
 }
 
 void init_smallp_segment_sieve(bucket *C,ui64 first_k,ui32 res,ui32 mod){
-    
+
     ui32 i;
     for(i=0;i<ppi;i++){
         C[i].offset=lin_solve(first_k,mod,res,primes[i]);
@@ -469,7 +573,7 @@ void init_segment_sieve(ui64 first_k,
        si32 *my_num_available_buckets,ui32 p1,ui32 p2,int thread_id){
 
    if(p1>p2)return;// no prime
-   
+
    res%=mod;
 
    ui32 tmp32;
@@ -480,11 +584,11 @@ void init_segment_sieve(ui64 first_k,
    for(i=0;i<size2;i++)available_buckets[i]=i<<sh3;
    num_available_buckets=size2;
    for(i=0;i<num_sieve;i++)large_lists[i]=0;
-   
+
    ui32 st=((p1>>7)/(8*threads))*8*threads;
    st+=8*thread_id;
    if(st<(p1>>7))st+=8*threads;
-   
+
    int cc=0;
    for(i=0;(ui64)i*LEN<=(ui64)p2;i++)if(TH[i]==thread_id||i<=threads){
        ui32 q1=imax64(p1,i*LEN);
@@ -492,12 +596,12 @@ void init_segment_sieve(ui64 first_k,
        ui32 j1=q1>>7;
        ui32 j2=q2>>7;
        ui32 step,k,mk;
-       
+
        if(i<=threads){j1+=8*thread_id;step=8*threads;mk=8;}
        else          {step=1;mk=1;}
-       
+
        for(j=j1;j<=j2;j+=step)for(k=0;k<mk&&j+k<=(q2>>7);k++){
-           
+
        ui64 temp64=isprime_table[j+k];
        for(p=128*(j+k)+1;temp64;temp64>>=1,p+=2){
            int e=get_lsb(temp64);
@@ -505,10 +609,10 @@ void init_segment_sieve(ui64 first_k,
 //           p+=2*e;
             p+=(e<<1);
           if(p<q1||p>q2||(mingap2%p==0))continue;
-       
+
            cc++;
            o=lin_solve(first_k,mod,res,p);
-       
+
           o2=o>>sieve_length_bits_log2;
           pos=large_lists[o2];
           if((pos&hash3)==0){
@@ -516,7 +620,7 @@ void init_segment_sieve(ui64 first_k,
                 pos=available_buckets[head];
                 large_lists[o2]=pos;
                 first_bucket[pos>>sh3]=1;
-              
+
                 head++;if(head==size2)head=0;num_available_buckets--;
              }
              else{
@@ -525,19 +629,19 @@ void init_segment_sieve(ui64 first_k,
                 large_lists[o2]=pos;
                 previous_bucket[pos>>sh3]=tmp32;
                 first_bucket[pos>>sh3]=0;
-              
+
                 head++;if(head==size2)head=0;num_available_buckets--;
              }
           }
           B[pos].pr=p;
-          B[pos].offset=o&hash2;       
+          B[pos].offset=o&hash2;
           large_lists[o2]++;
    }}}
    assert(num_available_buckets>=0);
 
    *my_head=head;
    *my_num_available_buckets=num_available_buckets;
-   
+
    return;
 }
 
@@ -547,7 +651,7 @@ void sieve_small_primes(ui64 *sieve_array,bucket *C,ui32 num_intervals,
     assert(cnt_offsets>0);
     ui32 cnt2,g,h,i,j,k,o,p,st[cnt_offsets];
     ui64 *arr=sieve_array;
-    
+
     if(LEN<131072)cnt2=0;
     else          cnt2=PPI_131072;// PPI_131072 number of primes not used in small sieves up to 2^17
 
@@ -606,11 +710,11 @@ void sieve_small_primes(ui64 *sieve_array,bucket *C,ui32 num_intervals,
                 arr2[k]&=off2[k];k++;
                 arr2[k]&=off2[k];k++;
                 arr2[k]&=off2[k];k++;
-            }                
+            }
             for(;k<LEN64;k++)arr2[k]&=off2[k];}
             st[i]=(st[i]+LEN64)%PROD[i];
         }
-        
+
         ui64 *arr2=arr;
         for(g=0;g<(LEN>>17);arr2+=2048,g++){
             for(j=0;j<PPI_131072;j++){
@@ -626,13 +730,13 @@ void sieve_small_primes(ui64 *sieve_array,bucket *C,ui32 num_intervals,
             C[j].offset=k-LEN;
         }
     }
-    
+
     // correction the offsets for the next block of array
     for(j=0;j<PPI_LEN;j++){
         C[j].offset+=res_table[j];
         if(C[j].offset>=C[j].pr)C[j].offset-=C[j].pr;
     }
-    
+
     return;
 }
 
@@ -641,7 +745,7 @@ void segmented_sieve(ui64 *sieve_array,
                      ui32 *available_buckets,ui32 *large_lists,ui32 *first_bucket,ui32 *my_head,
                      si32 *my_num_available_buckets,ui32 *my_start_offset_bucket){
    if(num_intervals<=0)return;
-   
+
    ui32 tmp32;
    ui32 size2=num_bucket/primes_per_bucket;
    ui32 k,o,o1,o2,p,pos,offset_bucket;
@@ -651,28 +755,28 @@ void segmented_sieve(ui64 *sieve_array,
    ui64 iterations;
 
    assert(num_available_buckets>=0);
-   
+
    for(iterations=0,offset_bucket=(*my_start_offset_bucket);iterations<num_intervals;arr+=LEN64,
        offset_bucket=(offset_bucket+1)&hash0,iterations++){
        o1=large_lists[offset_bucket];
-       
+
        if(o1!=0){
 
        ui32 first_pos=((o1-1)>>sh3)<<sh3;// we really need o1-1
        ui32 last_pos=o1;
        ui32 off1=offset_bucket+1;
        large_lists[offset_bucket]=0;
-       
+
        for(;;){
        for(k=first_pos;k<last_pos;k++){
            p=B[k].pr;
            o=B[k].offset;
-           
+
            arr[o>>6]&=InvBits[o&63];
            o+=p-LEN;
            o2=((o>>sieve_length_bits_log2)+off1)&hash0;
            pos=large_lists[o2];
-           
+
           if((pos&hash3)==0){
              if(pos==0){
                 pos=available_buckets[head];
@@ -695,7 +799,7 @@ void segmented_sieve(ui64 *sieve_array,
                 exit(1);
               }
          }
-          
+
            B[pos].pr=p;
            B[pos].offset=o&hash2;
            large_lists[o2]++;
@@ -704,7 +808,7 @@ void segmented_sieve(ui64 *sieve_array,
        o2=previous_bucket[o1];
        available_buckets[(head+num_available_buckets)%size2]=o1<<sh3;// give back to the list this bucket
        num_available_buckets++;
-       
+
        if(first_bucket[o1])break;// no more bucket for this interval
        first_pos=o2;
        last_pos=o2+primes_per_bucket;
@@ -712,18 +816,18 @@ void segmented_sieve(ui64 *sieve_array,
        }}
    }
    assert(num_available_buckets>=0);
-   
+
    *my_num_available_buckets=num_available_buckets;
    *my_head=head;
    *my_start_offset_bucket=offset_bucket;
-   
+
    return;
 }
 
 ui32 size_isprime;
 ui64 size_primes;
 void basic_segmented_sieve(ui32 n){// find primes up to max(n,65536)
-    
+
     ui32 LEN2=imax64(LEN,65536);
     n=imax64(n,LEN2);
     n-=n%65536;
@@ -740,16 +844,16 @@ void basic_segmented_sieve(ui32 n){// find primes up to max(n,65536)
         p=(i<<1)+1;
         for(j=(p*p-1)>>1;j<32768;j+=p)a[j>>6]&=InvBits[j&63];
     }
-    
+
     plist[0]=2;ppi=1;
 //    for(i=0;i<32768;i++)if(a[i>>6]&Bits[i&63])plist[ppi++]=2*i+1;
     for(i=0;i<32768;i++)if(a[i>>6]&Bits[i&63])plist[ppi++]=(i<<1)+1;
     printf("primepi(65536)=%d;\n",ppi);
     assert(ppi==6542);
-    
+
     size_isprime=mround_512(8*((n>>7)+1));
     if(posix_memalign((void**)&isprime_table,ALIGNEMENT,size_isprime)!=0)print_error_msg();
-    
+
     for(i=0;i<=(n>>7);i++)isprime_table[i]=inf64;
     isprime_table[0]&=InvBits[0];
     for(i=1;i<ppi;i++)offset[i]=(plist[i]*plist[i]-1)>>1;
@@ -765,7 +869,7 @@ void basic_segmented_sieve(ui32 n){// find primes up to max(n,65536)
             offset[j]=k;
         }
     }
-    
+
     ui32 cnt=0;
     for(i=0;i<=(LEN2>>7);i++)
        {for(temp64=isprime_table[i];temp64;temp64>>=1)cnt+=temp64&1;}
@@ -780,19 +884,19 @@ void basic_segmented_sieve(ui32 n){// find primes up to max(n,65536)
        }
     }
     printf("done basic segment sieve\n");
-    
+
     return;
 }
 
 void get_params(void){
-    
+
     int ret;
     ui64 v;
     char u[256],w[256];
-    
+
     FILE *fin;
     fin=fopen("worktodo_gap.txt","r");
-    
+
     if(fin!=NULL){
         printf("Found unfinished work, do you want to continue that (y/n) ? ");
         ret=scanf("%s",w);
@@ -801,12 +905,12 @@ void get_params(void){
                 if(set_n1&&v!=first_n){
                 printf("You given a different n1 with the -n1 switch from what is in the worktodo file,\nthat would mean a new range, not a continuation of the previous work. We exit.\n");
                 exit(1);}first_n=v;set_n1=1;
-            
+
             ret=fscanf(fin,"%s",w);sscanf(w,"n2=%s",u);v=conv64(u);
                 if(set_n2&&v!=last_n){
                 printf("You given a different n2 with the -n2 switch from what is in the worktodo file,\nthat would mean a new range, not a continuation of the previous work. We exit.\n");
                 exit(1);}last_n=v;set_n2=1;
-            
+
             ret=fscanf(fin,"%s",w);if(!set_currentn){sscanf(w,"n=%llu",&n0);set_currentn=1;}//there is no switch to set currentn
             ret=fscanf(fin,"%s",w);if(!set_gap){sscanf(w,"gap=%d",&mingap);set_gap=1;}
             ret=fscanf(fin,"%s",w);if(!set_delta){sscanf(w,"delta=%d",&gap_delta);set_delta=1;}
@@ -816,7 +920,7 @@ void get_params(void){
         else remove("worktodo_gap.txt");
         fclose(fin);
     }
-    
+
     if(!set_n1){
         printf("Give the first tested number! ");
         ret=scanf("%s",w);first_n=conv64(w);
@@ -836,38 +940,38 @@ void get_params(void){
         ret=scanf("%d",&mingap);
         set_gap=1;
     }
-    
+
     if(!set_delta){
         printf("Give the delta value for gap! (default=%d) ",default_gap_delta);
         ret=scanf("%d",&gap_delta);
         set_delta=1;
     }
-    
+
     if(!set_sb){
         printf("Give the log2 of the total sum of sieving bits (default=%d) ",default_sieve_bits_log2);
         ret=scanf("%d",&sieve_bits_log2);
         set_sb=1;
     }
-    
+
     if(!set_bs){
         printf("Give the log2 size of one bucket's byte size (default=%d) ",default_bucket_size_log2);
         ret=scanf("%d",&bucket_size_log2);
         set_bs=1;
     }
-    
+
     if(sieve_bits_log2<16||bucket_size_log2>16||sieve_bits_log2<bucket_size_log2){// smart check
         printf("Do you really want this(?), not swapped sb-bs values?\n");
         printf("sb is log2 of the sieving size in bits.\n");
         printf("bs is log2 of the one bucket size in bytes.\n");
         printf("You can still use Ctrl+C to break from here.\n");
     }
-    
+
     if(!set_mem){
        printf("Give for this code the available memory in GB (1GB=2^30 bytes),\nthis can be a real number (say 4.35) ");
        ret=scanf("%lf",&max_memory_gigabytes);
        set_mem=1;
     }
-    
+
     int maxthreads=omp_get_max_threads();
     if(!set_t){
        printf("Found %d thread(s) on this computer,\n",maxthreads);
@@ -878,19 +982,19 @@ void get_params(void){
     assert(threads>=0&&threads<=maxthreads);
     if(threads==0)exit(1);
     omp_set_num_threads(threads);
-    
+
     assert(first_n<=last_n);
-    
+
     return;
 }
 
 ui64 size_offset;
 int inits(void){// return 1 if all inits is success
-    
+
     get_params();
-    
+
     ui32 prime_per_thread[threads];
-    
+
     ui32 maxp=imax64(isqrt64(last_n),131072);
     sieve_length_bits_log2=bitlen(Bits[sieve_bits_log2]/threads)-1;
     while(sieve_length_bits_log2>6&&sieve_length_bits_log2>=bitlen(maxp))sieve_length_bits_log2--;
@@ -899,7 +1003,7 @@ int inits(void){// return 1 if all inits is success
     assert(bitlen(maxp)>=sieve_length_bits_log2+1);// with this maxp>=LEN is true
     num_sieve=Bits[bitlen(maxp)-sieve_length_bits_log2];
     hash0=num_sieve-1;
-    
+
     primes_per_bucket=precpower2((1<<bucket_size_log2)/(2*size_ui32));
     hash3=primes_per_bucket-1;
     sh3=bitlen(hash3);
@@ -912,13 +1016,13 @@ int inits(void){// return 1 if all inits is success
     ui64 I;
     double eff,best_eff;
     time_t sec=time(NULL);
-    
+
     assert(sizeof(ui32)>=4);
     assert(sizeof(ui64)==8);
-    
+
     temp32=30;
     mingap2=mingap-gap_delta;
-    best_eff=1.0;    
+    best_eff=1.0;
     for(i=30;i<=mingap2;i+=30){
         eff=(double)1/i;
         for(j=0;j<31;j++)
@@ -930,14 +1034,14 @@ int inits(void){// return 1 if all inits is success
     }
     mingap2=temp32;
     printf("Using mingap2=%d;\n",mingap2);
-    
+
     basic_segmented_sieve(imax64(maxp,LEN));
-    
+
     ui32 mod=mingap2;
     ui32 size_mod=mround_512(mod)*sizeof(ui32);
     if(posix_memalign((void**)&inv_mod,ALIGNEMENT,size_mod)!=0)print_error_msg();
     for(i=0;i<mod;i++)inv_mod[i]=single_modinv(i,mod);
-   
+
     num_res=0;
     for(i=0;i<gap_delta;i++)
         if(gcd64(i,mingap2)==1)r_table[num_res++]=i;
@@ -952,7 +1056,7 @@ int inits(void){// return 1 if all inits is success
           for(;i<31&&prod<MAX_SIZE/8/primes2[i];){
              if(mingap2%primes2[i]>0)prod*=primes2[i];
              i++;}
-             
+
           size=mround_512(lcm64(prod,64)+LEN);
           len+=size;
           PROD[cnt]=prod;
@@ -976,7 +1080,7 @@ int inits(void){// return 1 if all inits is success
         sh+=size/64;
     }
     cnt_offsets=cnt;
-    
+
     cnt=0;
     for(i=0;i<threads;i++)prime_per_thread[i]=0;
     PPI_131072=0;
@@ -994,7 +1098,7 @@ int inits(void){// return 1 if all inits is success
             }
         }
     }
-    
+
     // Distribute the primes in [LEN,maxp] in such a way that in each thread sum(1/p) will be roughly equal
     //    to get roughly equal time in (the bucket version) segmented sieve
     //    and for a multi threaded run the larger primes will be in blocks in the threads:
@@ -1023,9 +1127,9 @@ int inits(void){// return 1 if all inits is success
                 }
             }
         }
-        else{        
+        else{
             ui32 p1=LEN*i,pos=0;
-            double low_pr;
+            double low_pr=0.0;
             double s=0.0;
             cnt=0;
             for(j=1;j<LEN;j+=2){
@@ -1044,19 +1148,19 @@ int inits(void){// return 1 if all inits is success
     }
     ui32 np=0;
     for(i=0;i<threads;i++)np+=prime_per_thread[i];
-    
+
     num_bucket=1;
     for(i=0;i<threads;i++)num_bucket=imax64(num_bucket,prime_per_thread[i]);
     num_bucket+=(num_sieve+3)*primes_per_bucket;// it is enough +1 for rounding and +1 for the current bucket
                                                 // +1 for a new bucket
     num_bucket=mround_gen(num_bucket,lcm64(512,primes_per_bucket));
     printf("All initializations are done in %ld seconds.\n",time(NULL)-sec);
-    
+
     return 1;
 }
 
 void ff(void){
-    
+
     time_t sec=time(NULL);
 
     ui32 res,maxp=isqrt64(last_n);
@@ -1072,13 +1176,13 @@ void ff(void){
     ui64 size6=(ui64)threads*np;
     ui64 size8=mround_512(ppi);
     ui64 size9=(ui64)threads*mround_512(ppi);
-    
+
     double m0=0.0,m1=0.0;
     m0+=(double)size_offset;// size of offsets array
     m0+=(double)size_isprime;// size of the isprime array
     m0+=(double)size_primes;// size of the primes array
     m0+=(double)size8*sizeof(ui32);// size of the res_table array
-    
+
     m1+=(double)num_bucket*sizeof(bucket);// B
     m1+=(double)np*sizeof(ui32);// available_buckets
     m1+=(double)num_sieve*sizeof(ui32);// large_lists
@@ -1088,7 +1192,7 @@ void ff(void){
     m1+=(double)mround_512(ppi)*sizeof(bucket);// C
 
     m1*=(double)threads;
-    
+
     double mbytes=(double)DP30*max_memory_gigabytes;
     mbytes-=m0+m1;
     if(save_nextprimetest)mbytes/=(double)LEN/4;
@@ -1096,7 +1200,7 @@ void ff(void){
     mbytes-=0.5;
     si64 si_temp=(si64)mbytes;
     ui64 ilow=imax64(count_LEN_intervals,(ui64)nextpower2(maxp)/LEN);
-    
+
     if(si_temp<1||si_temp<ilow){
        m0+=(double)ilow*(LEN/8);
        if(save_nextprimetest)m0+=(double)ilow*(LEN/8);
@@ -1106,7 +1210,7 @@ void ff(void){
        exit(1);
     }
     ui64 num_iterations=mround_gen((ui64)si_temp,count_LEN_intervals);
-    
+
     ui64 size4=(ui64)num_iterations*(LEN/8);// size of ans, saved ans
     m0+=(double)size4;
     if(save_nextprimetest)m0+=(double)size4;
@@ -1114,13 +1218,13 @@ void ff(void){
     m1/=DP30;
     used_memory=m0+m1;
     printf("Memory usage: %.2lf GB.\n",used_memory);
-    
+
     ui64 *ans,*saved_ans,*sieve_array;
     ui32 *large_lists,*previous_bucket,*available_buckets,*first_bucket;
     bucket *B,*C;
     if(posix_memalign((void**)&B,ALIGNEMENT,size*sizeof(bucket))!=0)print_error_msg();
     if(posix_memalign((void**)&C,ALIGNEMENT,size9*sizeof(bucket))!=0)print_error_msg();
-    
+
     if(posix_memalign((void**)&available_buckets,ALIGNEMENT,size6*sizeof(ui32))!=0)print_error_msg();
     if(posix_memalign((void**)&large_lists,ALIGNEMENT,size2*sizeof(ui32))!=0)print_error_msg();
     if(posix_memalign((void**)&sieve_array,ALIGNEMENT,size3)!=0)print_error_msg();
@@ -1136,31 +1240,31 @@ void ff(void){
         first_k=mround_gen(n0,mingap2)/mingap2-1;}
     else first_k=n0/mingap2;
     ui64 last_k=last_n/mingap2;
-    
+
     int mod=mingap2,i,j;
-    
+
     ui64 I;
     ui64 large_block=(ui64)count_LEN_intervals*LEN;
-    ui64 processed_large_blocks=0;
-    
+    //ui64 processed_large_blocks=0;
+
     int first_run=1;
     ui32 mid_res=0;
-    
+
     printf("Program version number=%s;\n",version);
     printf("Start the main algorithm; date: ");print_time();
     printf("\ninterval=[%llu,%llu]; now at n=%llu;\n",first_n,last_n,n0);
     printf("gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB\n",
-           mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
-    
+           mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);
+
     ui64 step_k=(ui64)num_iterations*LEN;// num_iterations is divisible by count_LEN_intervals
     ui32 ppi2=mround_512(ppi);
-    
+
     ui64 temp=(ui64)large_block*(threads-1);
     for(i=0;i<ppi;i++){
         res_table[i]=primes[i]-(temp%primes[i]);
         if(res_table[i]==primes[i])res_table[i]=0;
     }
-    
+
     for(;first_k<=last_k;first_k+=step_k){
        time_t loop_sec=time(NULL);//******************************************************
        if(!first_run){
@@ -1178,15 +1282,15 @@ void ff(void){
         ui64 num_large_block=imin64(num_iterations/count_LEN_intervals,
                 mround_gen(last_k-first_k+1,large_block)/large_block);
         ui64 I2=((ui64)num_large_block*large_block)/64;
-        
+
         for(I=0;I<I2;I++)ans[I]=0;
-        
+
         temp=imin64(first_k+step_k,last_k);
         temp=imin64((temp+1)*mod,last_n);
         maxp=isqrt64(temp);
-        
+
         int saved=0;// note: it is possible that there will be no save (if num_res<2)
-        
+
         for(i=0;i<num_res;i++){
             if(save_nextprimetest&&i==(num_res+1)/2){
                 ui64 I2=((ui64)num_iterations*LEN)/64;
@@ -1194,25 +1298,25 @@ void ff(void){
                 saved=1;
                 mid_res=r_table[i-1];
             }
-            
+
             res=r_table[i];
             ui32 head[threads];
             ui32 start_offset_bucket[threads];
             si32 num_available_buckets[threads];
-            
+
             ui64 it;
             for(it=0;it<num_large_block+threads-1;it++){
                 #pragma omp parallel for schedule(dynamic,1)
                 for(j=0;j<threads;j++){
 
-//                ui32 id2=(it+2*threads-j)%(2*threads); 
+//                ui32 id2=(it+2*threads-j)%(2*threads);
 //                ui32 id=(id2+threads)%(2*threads);
-                ui32 id2=(it+threads2-j)%threads2; 
+                ui32 id2=(it+threads2-j)%threads2;
                 ui32 id=(id2+threads)%threads2;
-                
+
                 if(id==threads)id=0;
                 else if(id==0)id=threads;
-                
+
                 bucket *B2=B+(ui64)j*num_bucket;
                 bucket *C2=C+(ui64)(id2%threads)*ppi2;
                 ui32 *previous_bucket2=previous_bucket+(ui64)j*np;
@@ -1221,12 +1325,12 @@ void ff(void){
                 ui32 *first_bucket2=first_bucket+(ui64)j*np;
                 ui64 *sieve_array2=sieve_array+(ui64)id2*(large_block/64);
                 ui64 *sieve_array3=sieve_array+(ui64)id*(large_block/64);
-                
+
                 ui64 first_k2=first_k+(ui64)(it+(id%threads))*large_block;
 
                 if(it==0){// init the sieves
                     init_smallp_segment_sieve(C2,first_k2,res,mod);
-                    
+
                     start_offset_bucket[j]=0;
                     head[j]=0;
                     num_available_buckets[j]=0;
@@ -1234,19 +1338,19 @@ void ff(void){
                        available_buckets2,large_lists2,first_bucket2,&head[j],
                        &num_available_buckets[j],LEN,maxp,j);
                 }
-                
+
                 if(it%threads==0&&it<num_large_block){// do the smallprime sieve
                    sieve_small_primes(sieve_array3,C2,count_LEN_intervals,
                    first_k2,res,mod,128,LEN);
                 }
-                
+
                 // do the (it-j)-th block
                 if(it>=j&&it-j<num_large_block){
                     segmented_sieve(sieve_array2,
                        count_LEN_intervals,B2,previous_bucket2,
                        available_buckets2,large_lists2,first_bucket2,&head[j],
                        &num_available_buckets[j],&start_offset_bucket[j]);
-                    
+
                     if(j==threads-1){//save the large block, note that only one thread
                        // worked on this block, so there is no race
                        //printf("start or\n");
@@ -1255,9 +1359,9 @@ void ff(void){
                        for(K=0;K<K2;K++)ans2[K]|=sieve_array2[K];
                 }}}}
         }
-        
+
         ui64 cnt_findprp_prime[threads],cnt_empty_block[threads];
-        
+
         ui64 *sols,K;
         int nt=omp_get_max_threads();// max. number of threads
         ui32 num_solutions[nt];
@@ -1266,7 +1370,7 @@ void ff(void){
             num_solutions[i]=0;
             cnt_findprp_prime[i]=0;
             cnt_empty_block[i]=0;}
-        
+
         #pragma omp parallel for schedule(dynamic,1)
         for(K=0;K<I2;K+=1048576){
             int th_id=omp_get_thread_num();
@@ -1287,9 +1391,9 @@ void ff(void){
 */
 					   int shift = __builtin_ctzll(tmp64);
 					   h+=shift;
-					   tmp64>>=shift;	
+					   tmp64>>=shift;
                        ui64 pos=64*(K+G)+h;
-                       
+
                        ui64 mult=first_k+pos;
                        if(mult>=first_k&&mult<=last_k){
                           ui64 n=(ui64)mult*mod;// n is even
@@ -1319,7 +1423,7 @@ void ff(void){
                                  }
                                  fclose(fout);
                                  num_solutions[th_id]=0;
-                             }                              
+                             }
                           }
                        }
                    }
@@ -1328,10 +1432,10 @@ void ff(void){
         ui64 c0=0,c1=0;
         for(i=0;i<nt;i++)
         {c0+=cnt_findprp_prime[i];c1+=cnt_empty_block[i];}
-        
+
         ui32 ns=0;for(i=0;i<nt;i++)ns+=num_solutions[i];
         GAP my_gap[ns];
-        
+
         ns=0;
         for(j=0;j<nt;j++){
             ui32 k,o=MNS2*j;
@@ -1342,14 +1446,14 @@ void ff(void){
                 ns++;
             }
         }
-        
+
         //qsort(my_gap,ns,sizeof(GAP),comp);
         int l1,l2;
         // bubble sort
         for(l1=0;l1<ns;l1++)for(l2=0;l1+l2+1<ns;l2++)if(my_gap[l2].p1>my_gap[l2+1].p1){
             ui32 t1=my_gap[l2].gap;my_gap[l2].gap=my_gap[l2+1].gap;my_gap[l2+1].gap=t1;
             ui64 t2=my_gap[l2].p1; my_gap[l2].p1=my_gap[l2+1].p1;  my_gap[l2+1].p1=t2;}
-        
+
         FILE* fout;
         fout=fopen("gap_solutions.txt","a+");
         for(i=0;i<ns;i++)if(i==0||my_gap[i].p1>my_gap[i-1].p1){
@@ -1358,30 +1462,31 @@ void ff(void){
         }
         fclose(fout);
         free(sols);
-        
+
  //       processed_large_blocks+=num_large_block;
  //       double rate=(double)processed_large_blocks/((double)(time(NULL)-sec)+0.01);// to avoid division by 0
         double rate=(double)num_large_block/((double)(time(NULL)-loop_sec)+0.01);// to avoid division by 0
         rate*=(double)large_block;
         rate*=(double)mod;
-        
+
         ui64 nn=first_k+(ui64)num_large_block*large_block;
         if(nn>last_k)nn=last_k+1;
         nn*=mod;
         nn=imin64(nn,last_n);
-        
+
         printf("%.2lfe9 n/sec.; now at n=%llu; time=%ld sec.; date: ",rate/1e9,nn,time(NULL)-sec);
         print_time();printf("\n");
-        
+        fflush(stdout);
+
         fout=fopen("gap_log.txt","a+");
         fprintf(fout,"Done interval=[%llu,%llu] with version=%s;gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB.\n",
-            imax64(first_n,(ui64)first_k*mod),nn,version,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
+            imax64(first_n,(ui64)first_k*mod),nn,version,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);
         fclose(fout);
     }
     FILE* fout;
     fout=fopen("results_gap.txt","a+");
     fprintf(fout,"Done interval=[%llu,%llu] with version=%s;gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB.\n",
-            first_n,last_n,version,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
+            first_n,last_n,version,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);
     fclose(fout);
     remove("worktodo_gap.txt");
 
@@ -1400,7 +1505,7 @@ void ff(void){
     free(TH);
     free(C);
     free(res_table);
-    
+
     return;
 }
 
@@ -1416,7 +1521,7 @@ int main(int argc, char **argv){
     set_mem=0;
     set_t=0;
     set_currentn=0;
-    
+
     while((argc>1)&&(argv[1][0]=='-')){
       if(strcmp(argv[1],"-h")==0||strcmp(argv[1],"--help")==0){
         usage();
@@ -1475,15 +1580,16 @@ int main(int argc, char **argv){
 	    exit(1);
 	  }
     }
-    
+
     inits();
     time_t sec=time(NULL);
     double dt=cpu_time();
     ff();
     printf("Done interval=[%llu,%llu]\nwith gap=%d;delta=%d;sb=%d;bs=%d;t=%d threads;memory=%.2lf GB.\n",
-            first_n,last_n,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);    
+            first_n,last_n,mingap,gap_delta,sieve_bits_log2,bucket_size_log2,threads,max_memory_gigabytes);
     printf("Search used %ld sec. (Wall clock time), %.2lf cpu sec.\n",time(NULL)-sec,cpu_time()-dt);
     print_time();printf("\n");
-    
+
     return 0;
 }
+
