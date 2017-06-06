@@ -3,7 +3,7 @@
 //Fermat & Euler-Plumb PRP tests using Montgomery math
 //written by Dana Jacobsen
 
-// version 0.05.d
+// version 0.05.e
 
 // my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap3.c -lm
 // don't forget -fopenmp  [for OpenMP]
@@ -31,7 +31,7 @@
 #include <sys/resource.h>
 #include "omp.h" // for multithreading, need gcc >= 4.2
 
-#define version "0.05.d"
+#define version "0.05.e"
 
 typedef unsigned int ui32;
 typedef signed int si32;
@@ -395,35 +395,47 @@ static inline ui64 mont_powmod64(ui64 a, ui64 k, ui64 one, ui64 n, ui64 npi)
   }
   return t;
 }
+
 static inline ui64 modular_inverse64(const ui64 a)
 {
-  ui64 J, S = 1;
-  int idx;
-  /* Basic algorithm:
-   *    for (i = 0; i < 64; i++) {
-   *      if (S & 1)  {  J |= (1ULL << i);  S += a;  }
-   *      S >>= 1;
-   *    }
-   * What follows is 8 bits at a time, unrolled by hand. */
-  static const char mask[128] = {255,85,51,73,199,93,59,17,15,229,195,89,215,237,203,33,
-  31,117,83,105,231,125,91,49,47,5,227,121,247,13,235,65,63,149,115,137,7,157,123,81,79,
-  37,3,153,23,45,11,97,95,181,147,169,39,189,155,113,111,69,35,185,55,77,43,129,127,213,
-  179,201,71,221,187,145,143,101,67,217,87,109,75,161,159,245,211,233,103,253,219,177,175,
-  133,99,249,119,141,107,193,191,21,243,9,135,29,251,209,207,165,131,25,151,173,139,225,
-  223,53,19,41,167,61,27,241,239,197,163,57,183,205,171,1};
+	static const char mask[128] = {255,85,51,73,199,93,59,17,15,229,195,89,215,237,203,33,
+	31,117,83,105,231,125,91,49,47,5,227,121,247,13,235,65,63,149,115,137,7,157,123,81,79,
+	37,3,153,23,45,11,97,95,181,147,169,39,189,155,113,111,69,35,185,55,77,43,129,127,213,
+	179,201,71,221,187,145,143,101,67,217,87,109,75,161,159,245,211,233,103,253,219,177,175,
+	133,99,249,119,141,107,193,191,21,243,9,135,29,251,209,207,165,131,25,151,173,139,225,
+	223,53,19,41,167,61,27,241,239,197,163,57,183,205,171,1};
 
-  const char amask = mask[(a >> 1) & 127];
-  ui32 T;
-  idx = (amask*(S&255)) & 255;  J = idx;              S = (S+a*idx) >> 8;
-  idx = (amask*(S&255)) & 255;  J |= (ui64)idx << 8;  S = (S+a*idx) >> 8;
-  idx = (amask*(S&255)) & 255;  J |= (ui64)idx <<16;  S = (S+a*idx) >> 8;
-  idx = (amask*(S&255)) & 255;  J |= (ui64)idx <<24;  T = (S+a*idx) >> 8;
-  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<32;  T = (T+a*idx) >> 8;
-  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<40;  T = (T+a*idx) >> 8;
-  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<48;  T = (T+a*idx) >> 8;
-  idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<56;
-  return J;
+	#if 1
+    // Gerbicz - Hensel lifting
+    ui64 ret = mask[(a >> 1) & 127];
+    ret *= 2 + a * ret;
+    ret *= 2 + a * ret;
+    ret *= 2 + a * ret;
+    return ret;
+	#else
+	// Jacobsen
+	/* Basic algorithm:
+	*    for (i = 0; i < 64; i++) {
+	*      if (S & 1)  {  J |= (1ULL << i);  S += a;  }
+	*      S >>= 1;
+	*    }
+	* What follows is 8 bits at a time, unrolled by hand. */
+	ui64 J, S = 1;
+	ui32 T;
+	int idx;
+	const char amask = mask[(a >> 1) & 127];
+	idx = (amask*(S&255)) & 255;  J = idx;              S = (S+a*idx) >> 8;
+	idx = (amask*(S&255)) & 255;  J |= (ui64)idx << 8;  S = (S+a*idx) >> 8;
+	idx = (amask*(S&255)) & 255;  J |= (ui64)idx <<16;  S = (S+a*idx) >> 8;
+	idx = (amask*(S&255)) & 255;  J |= (ui64)idx <<24;  T = (S+a*idx) >> 8;
+	idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<32;  T = (T+a*idx) >> 8;
+	idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<40;  T = (T+a*idx) >> 8;
+	idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<48;  T = (T+a*idx) >> 8;
+	idx = (amask*(T&255)) & 255;  J |= (ui64)idx <<56;
+	return J;
+	#endif
 }
+
 static inline ui64 compute_modn64(const ui64 n)
 {
 
