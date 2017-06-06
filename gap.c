@@ -3,22 +3,26 @@
 //Fermat & Euler-Plumb PRP tests using Montgomery math
 //written by Dana Jacobsen
 
-// version 0.05.e
-
 // my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap3.c -lm
 // don't forget -fopenmp  [for OpenMP]
 // use your own processor type, mine is skylake
 
-//[Antonio/]
-//
-//my compile lines:
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=sandybridge -march=sandybridge -o gap5_d_sandybridge gap5_d.c -lm
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=ivybridge -march=ivybridge -o gap5_d_ivybridge gap5_d.c -lm
-//gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx2 -mtune=haswell -march=haswell -o gap5_d_haswell gap5_d.c -lm
-//If your version of gcc supports later processors then substitute in -mtune and -march for the appropriate processor.
-//
-//[\Antonio]
+// version 0.05		Bug fix													Robert Gerbicz
+// version 0.05.d	Fermat & Euler-Plumb PRP tests using Montgomery math	Dana Jacobsen
+// version 0.05.e	Hensel lifting											Robert Gerbicz
+// version 0.05.f	next_prime, prec_prime tuning							Antonio Key
 
+/*[Antonio/]
+
+my compile lines:
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap5_f_nehalem gap5_f.c -lm
+gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=sandybridge -march=sandybridge -o gap5_f_sandybridge gap5_f.c -lm
+gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=ivybridge -march=ivybridge -o gap5_f_ivybridge gapf_d.c -lm
+gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx2 -mtune=haswell -march=haswell -o gap5_f_haswell gap5_f.c -lm
+If your version of gcc supports later processors then substitute in -mtune and -march for the appropriate processor.
+
+[\Antonio]
+*/
 // For newer/older processors use your own better settings for the below constants
 
 #include <stdio.h>
@@ -31,7 +35,7 @@
 #include <sys/resource.h>
 #include "omp.h" // for multithreading, need gcc >= 4.2
 
-#define version "0.05.e"
+#define version "0.05.f"
 
 typedef unsigned int ui32;
 typedef signed int si32;
@@ -461,7 +465,7 @@ ui32 fermatprp2(ui64 n){
     const ui64 mont2 = mont_get2(n);
     ui32 nmod8 = n & 0x7;
     ui64 ap = mont_powmod(mont2, (n-1) >> (1 + (nmod8 == 1)), n);
-    if (ap ==   mont1)  return (nmod8 == 1 || nmod8 == 7);
+	if (ap ==   mont1)  return (nmod8 == 1 || nmod8 == 7);
     if (ap == n-mont1)  return (nmod8 == 1 || nmod8 == 3 || nmod8 == 5);
     return 0;
   #endif
@@ -479,8 +483,14 @@ ui64 next_prime(ui64 n){
 
     for(i=0;;i++){
         n2+=add30[i&7];
+//        if(n2>=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&
+//          n2%53&&n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&fermatprp2(n2))return n2;
         if(n2>=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&
-          n2%53&&n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&fermatprp2(n2))return n2;
+		  n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&n2%101&&n2%103&&n2%107&&n2%109&&
+		  n2%113&&n2%127&&n2%131&&n2%137&&n2%139&&n2%149&&n2%151&&n2%157&&n2%163&&n2%167&&n2%173&&n2%179&&
+		  n2%181&&n2%191&&n2%193&&n2%197&&n2%199&&n2%211&&n2%223&&n2%227&&n2%229&&n2%233&&n2%239&&n2%241&&
+		  n2%251&&n2%257&&n2%263&&n2%269&&n2%271&&n2%277&&n2%281&&n2%283&&n2%293&&n2%307&&n2%311&&n2%313&&
+		  n2%317&&fermatprp2(n2))return n2;
     }
 }
 
@@ -493,8 +503,14 @@ ui64 prec_prime(ui64 n){
     ui64 n2=n+31-(n%30);
     for(i=0;;i++){
         n2-=sub30[i&7];
-        if(n2<=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&
-          n2%53&&n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&fermatprp2(n2))return n2;
+//        if(n2<=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&
+//          n2%53&&n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&fermatprp2(n2))return n2;
+        if(n2<=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&n2%53&&
+		  n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&n2%101&&n2%103&&n2%107&&n2%109&&
+		  n2%113&&n2%127&&n2%131&&n2%137&&n2%139&&n2%149&&n2%151&&n2%157&&n2%163&&n2%167&&n2%173&&n2%179&&
+		  n2%181&&n2%191&&n2%193&&n2%197&&n2%199&&n2%211&&n2%223&&n2%227&&n2%229&&n2%233&&n2%239&&n2%241&&
+		  n2%251&&n2%257&&n2%263&&n2%269&&n2%271&&n2%277&&n2%281&&n2%283&&n2%293&&n2%307&&n2%311&&n2%313&&
+		  n2%317&&fermatprp2(n2))return n2;
     }
 }
 
