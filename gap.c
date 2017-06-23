@@ -3,27 +3,34 @@
 //Fermat & Euler-Plumb PRP tests using Montgomery math
 //written by Dana Jacobsen
 
+// version 0.05.g	Fixed quick sort, added optimized bubble sort.			Antonio Key
+//					Replaced add30 & sub30 constant arrays with a single
+//					wheel30 constant array - they became idential in 0.05.
+//					Added ETA to status display line.
+//					Removed some of the old commented-out code.
+//					Modified the smart check on input data.
+
+// version 0.05.f	next_prime, prec_prime tuning.							Antonio Key
+
+// version 0.05.e	Hensel lifting.											Robert Gerbicz
+
+// version 0.05.d	Fermat & Euler-Plumb PRP tests using Montgomery math.	Dana Jacobsen
+
+// version 0.05		Bug fix.												Robert Gerbicz
+
 // my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap3.c -lm
 // don't forget -fopenmp  [for OpenMP]
 // use your own processor type, mine is skylake
 
-// version 0.05		Bug fix													Robert Gerbicz
-// version 0.05.d	Fermat & Euler-Plumb PRP tests using Montgomery math	Dana Jacobsen
-// version 0.05.e	Hensel lifting											Robert Gerbicz
-// version 0.05.f	next_prime, prec_prime tuning							Antonio Key
-
 /*[Antonio/]
-
 my compile lines:
-gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap5_f_nehalem gap5_f.c -lm
-gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=sandybridge -march=sandybridge -o gap5_f_sandybridge gap5_f.c -lm
-gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx -mtune=ivybridge -march=ivybridge -o gap5_f_ivybridge gapf_d.c -lm
-gcc -flto -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -mavx2 -mtune=haswell -march=haswell -o gap5_f_haswell gap5_f.c -lm
-If your version of gcc supports later processors then substitute in -mtune and -march for the appropriate processor.
-
+For pre-Haswell Core i processors (Nehalem to Ivybridge):
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap5_g gap5_g.c -lm
+For Haswell or later Core i processors:
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -mavx2 -mtune=haswell -march=haswell -o gap5_g_haswell gap5_g.c -lm
+If your version of gcc supports later processors then you can substitute in -mtune and -march for the appropriate processor.
 [\Antonio]
 */
-// For newer/older processors use your own better settings for the below constants
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,7 +42,7 @@ If your version of gcc supports later processors then substitute in -mtune and -
 #include <sys/resource.h>
 #include "omp.h" // for multithreading, need gcc >= 4.2
 
-#define version "0.05.f"
+#define version "0.05.g"
 
 typedef unsigned int ui32;
 typedef signed int si32;
@@ -45,7 +52,6 @@ typedef unsigned long long int ui64;
 
 // these are only used to show as a hint, code will ask these as input/switch/file,
 // so there is no need to modify these here.
-
 #define default_sieve_bits_log2  25 // Total number of sieve array's bits(!!!), the most important constant
                             // say you have 3 MB of L3 cache, then sb=24 is a good choice since 2^24 bits=2 MB
                             // 2nd example:
@@ -63,33 +69,34 @@ typedef unsigned long long int ui64;
 #define default_gap_delta 196 // we will sieve mingap2*k+[0,gap_delta) intervals
 
 // *******************
+// For newer/older processors use your own better settings for the below constants
 // modify these 6 constants here, we won't input this:
-#define save_nextprimetest 1 // we use another big array to save one next_prime() cost after the prec_prime()
-                             // in most of the cases. note that if you would use save_nextprimetest=0
-                             //  to save memory (but get slower sieve!)
-                             //  then the optimal gap_delta should be larger by roughly 10,
-                             //  so in the high n range it should be 196+10=206 ( so close to 200 )
-                             //  [the hint about default_gap_delta is showing the delta for save_nextprimetest=1]
+#define save_nextprimetest 1	// we use another big array to save one next_prime() cost after the prec_prime()
+								// in most of the cases. note that if you would use save_nextprimetest=0
+								// to save memory (but get slower sieve!)
+								// then the optimal gap_delta should be larger by roughly 10,
+								// so in the high n range it should be 196+10=206 ( so close to 200 )
+								// [the hint about default_gap_delta is showing the delta for save_nextprimetest=1]
 
-#define default_report_gap 1000 // we print and save gap=p2-p1 iff gap>=default_report_gap or gap>=mingap
-                                // though it is NOT an exhustive search(!!!), only for >=mingap
+#define default_report_gap 1000	// we print and save gap=p2-p1 iff gap>=default_report_gap or gap>=mingap
+								// though it is NOT an exhustive search(!!!), only for >=mingap
 
-#define count_LEN_intervals 32 // to lower some init costs in the sieve, 32 is quite a good choice
-                               //  and changing to a much larger value would need a much longer
-                               //  sieve array, so a much larger memory
-                               // note: this can be non-power of two also.
+#define count_LEN_intervals 32	// to lower some init costs in the sieve, 32 is quite a good choice
+								// and changing to a much larger value would need a much longer
+								// sieve array, so a much larger memory
+								// note: this can be non-power of two also.
 
-#define MAX_SIZE (1LL<<29) // in bytes for offsets array, to save some space (0.5-1 GB) lower this
-                           // to say (1LL<<24), but that will give a slower sieve
-                           // this can be also non-power of two
+#define MAX_SIZE (1LL<<29)		// in bytes for offsets array, to save some space (0.5-1 GB) lower this
+								// to say (1LL<<24), but that will give a slower sieve
+								// this can be also non-power of two
 
-#define MAX_NUM_SOLUTIONS 256 // max. number of solutions per thread, we still can print/save results if
-                             // there would be more solutions
+#define MAX_NUM_SOLUTIONS 64	// max. number of solutions per thread, we still can print/save results if
+								// there would be more solutions
 
-#define ALIGNEMENT 4096 // alignement (in bytes!)
-                        // it could be say (1<<bucket_size_log2), and at least 64.
-                        // or a higher power of two, but that gives no speedup
-                        // [it should be a power of two]
+#define ALIGNEMENT 4096			// alignement (in bytes!)
+								// it could be say (1<<bucket_size_log2), and at least 64.
+								// or a higher power of two, but that gives no speedup
+								// [it should be a power of two]
 
 // *******************
 
@@ -202,9 +209,7 @@ static const ui64 InvBits[64]={// InvBits[i]=2^64-1-2^i for masking
 0xfeffffffffffffff,0xfdffffffffffffff,0xfbffffffffffffff,0xf7ffffffffffffff,
 0xefffffffffffffff,0xdfffffffffffffff,0xbfffffffffffffff,0x7fffffffffffffff};
 
-//static const int add30[8]={6,4,2,4,2,4,6,2};
-static const int add30[8]={2,6,4,2,4,2,4,6};
-static const int sub30[8]={2,6,4,2,4,2,4,6};
+static const int wheel30[8]={2,6,4,2,4,2,4,6};
 
 static const int table_prev_prime[128]={
 0,0,2,3,3,5,5,7,7,7,7,11,11,13,13,13,13,17,17,19,19,19,19,23,23,
@@ -238,7 +243,8 @@ ui64 p1;
 int comp(const void *a,const void *b){
   GAP *gap1=(GAP*)a;
   GAP *gap2=(GAP*)b;
-  return(gap2->p1<gap1->p1);
+//  if (gap2->p1==gap1->p1) return 0;
+  return((gap2->p1 < gap1->p1) ? 1 : -1);  
 }
 
 void print_time(void){
@@ -334,7 +340,6 @@ ui64 fermatpowmod2_63(ui64 n){// n>0, return (2^(n-1)) mod n, assume that n<2^63
     for(i=len-7;i>=0;i--){
         ret=mulmod(ret,ret,n);
         if((n1>>i)&1){//do ret=(2*ret)%n;
-//            if(ret>n2)ret=2*ret-n;
             if(ret>n2)ret=(ret<<1)-n;
             else      ret<<=1;
         }
@@ -472,26 +477,24 @@ ui32 fermatprp2(ui64 n){
 }
 #endif
 
+#define trial_div(n)	(n%7&&n%11&&n%13&&n%17&&n%19&&n%23&&n%29&&n%31&&n%37&&n%41&&n%43&&n%47&&n%59&&\
+						 n%61&&n%67&&n%71&&n%73&&n%79&&n%83&&n%89&&n%97&&n%101&&n%103&&n%107&&n%109&&n%113&&\
+						 n%127&&n%131&&n%137&&n%139&&n%149&&n%151&&n%157&&n%163&&n%167&&n%173&&n%179&&n%181&&\
+						 n%191&&n%193&&n%197&&n%199&&n%211&&n%223&&n%227&&n%229&&n%233&&n%239&&n%241&&n%251\
+						 )
+						
 ui64 next_prime(ui64 n){
 
     if(n<128) return table_next_prime[n];
     if(n>MP64)return 0;// fake, overflow in 64 bits
 
-    ui32 i;
-//    ui64 n2=n+1-(n%30);
+    ui32 i = 0;
     ui64 n2=n-1-(n%30);
-
-    for(i=0;;i++){
-        n2+=add30[i&7];
-//        if(n2>=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&
-//          n2%53&&n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&fermatprp2(n2))return n2;
-        if(n2>=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&
-		  n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&n2%101&&n2%103&&n2%107&&n2%109&&
-		  n2%113&&n2%127&&n2%131&&n2%137&&n2%139&&n2%149&&n2%151&&n2%157&&n2%163&&n2%167&&n2%173&&n2%179&&
-		  n2%181&&n2%191&&n2%193&&n2%197&&n2%199&&n2%211&&n2%223&&n2%227&&n2%229&&n2%233&&n2%239&&n2%241&&
-		  n2%251&&n2%257&&n2%263&&n2%269&&n2%271&&n2%277&&n2%281&&n2%283&&n2%293&&n2%307&&n2%311&&n2%313&&
-		  n2%317&&fermatprp2(n2))return n2;
-    }
+//    for(i=0;;i++){
+//        n2+=wheel30[i&7];
+//        if(n2>=n && trial_div(n2) && fermatprp2(n2))return n2;
+	while (n2<n) {n2+=wheel30[i&7]; i++;}
+	do {if(trial_div(n2) && fermatprp2(n2))return n2; n2+=wheel30[i&7];} while (i++);
 }
 
 ui64 prec_prime(ui64 n){
@@ -499,19 +502,13 @@ ui64 prec_prime(ui64 n){
     if(n<128)  return table_prev_prime[n];
     if(n>=MP64)return MP64;
 
-    ui32 i;
+    ui32 i = 0;
     ui64 n2=n+31-(n%30);
-    for(i=0;;i++){
-        n2-=sub30[i&7];
-//        if(n2<=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&
-//          n2%53&&n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&fermatprp2(n2))return n2;
-        if(n2<=n&&n2%7&&n2%11&&n2%13&&n2%17&&n2%19&&n2%23&&n2%29&&n2%31&&n2%37&&n2%41&&n2%43&&n2%47&&n2%53&&
-		  n2%59&&n2%61&&n2%67&&n2%71&&n2%73&&n2%79&&n2%83&&n2%89&&n2%97&&n2%101&&n2%103&&n2%107&&n2%109&&
-		  n2%113&&n2%127&&n2%131&&n2%137&&n2%139&&n2%149&&n2%151&&n2%157&&n2%163&&n2%167&&n2%173&&n2%179&&
-		  n2%181&&n2%191&&n2%193&&n2%197&&n2%199&&n2%211&&n2%223&&n2%227&&n2%229&&n2%233&&n2%239&&n2%241&&
-		  n2%251&&n2%257&&n2%263&&n2%269&&n2%271&&n2%277&&n2%281&&n2%283&&n2%293&&n2%307&&n2%311&&n2%313&&
-		  n2%317&&fermatprp2(n2))return n2;
-    }
+//    for(i=0;;i++){
+//        n2-=wheel30[i&7];
+//        if(n2<=n && trial_div(n2) && fermatprp2(n2))return n2;
+	while (n2>n) {n2-=wheel30[i&7]; i++;}
+	do {if(trial_div(n2) && fermatprp2(n2))return n2; n2-=wheel30[i&7];} while (i++);
 }
 
 si64 single_modinv(si64 a,si64 modulus)
@@ -634,7 +631,6 @@ void init_segment_sieve(ui64 first_k,
        for(p=128*(j+k)+1;temp64;temp64>>=1,p+=2){
            int e=get_lsb(temp64);
            temp64>>=e;
-//           p+=2*e;
             p+=(e<<1);
           if(p<q1||p>q2||(mingap2%p==0))continue;
 
@@ -868,13 +864,11 @@ void basic_segmented_sieve(ui32 n){// find primes up to max(n,65536)
     for(i=0;i<512;i++)a[i]=inf64;
     a[0]&=InvBits[0];
     for(i=1;i<128;i++)if(a[i>>6]&Bits[i&63]){
-//        p=2*i+1;
         p=(i<<1)+1;
         for(j=(p*p-1)>>1;j<32768;j+=p)a[j>>6]&=InvBits[j&63];
     }
 
     plist[0]=2;ppi=1;
-//    for(i=0;i<32768;i++)if(a[i>>6]&Bits[i&63])plist[ppi++]=2*i+1;
     for(i=0;i<32768;i++)if(a[i>>6]&Bits[i&63])plist[ppi++]=(i<<1)+1;
     printf("primepi(65536)=%d;\n",ppi);
     assert(ppi==6542);
@@ -887,7 +881,6 @@ void basic_segmented_sieve(ui32 n){// find primes up to max(n,65536)
     for(i=1;i<ppi;i++)offset[i]=(plist[i]*plist[i]-1)>>1;
     for(i=0;i<=(n>>16);i++){
         m=32768*i+32767;
-//        m2=2*m+1;
         m2=(m<<1)+1;
         for(j=1;j<6542;j++){
             p=plist[j];
@@ -987,7 +980,9 @@ void get_params(void){
         set_bs=1;
     }
 
-    if(sieve_bits_log2<16||bucket_size_log2>16||sieve_bits_log2<bucket_size_log2){// smart check
+//    if(sieve_bits_log2<16||bucket_size_log2>16||sieve_bits_log2<bucket_size_log2){// smart check
+    if(sieve_bits_log2<16||(sieve_bits_log2-bucket_size_log2)<3){// smart check
+	// Is the sieve too small or is the bucket size greater than the sieve size
         printf("Do you really want this(?), not swapped sb-bs values?\n");
         printf("sb is log2 of the sieving size in bits.\n");
         printf("bs is log2 of the one bucket size in bytes.\n");
@@ -1118,7 +1113,6 @@ int inits(void){// return 1 if all inits is success
         for(p=128*i+1;temp64;temp64>>=1,p+=2){
             int e=get_lsb(temp64);
             temp64>>=e;
-//            p+=2*e;
             p+=(e<<1);
             if(p>128&&mingap2%p>0){
                if(p<131072)PPI_131072++;
@@ -1147,7 +1141,6 @@ int inits(void){// return 1 if all inits is success
                 for(;tmp64;tmp64>>=1,p+=2){
                     int e=get_lsb(tmp64);
                     tmp64>>=e;
-//                    p+=2*e;
                     p+=(e<<1);
                     if(p<128||p>maxp||mingap2%p==0)continue;
                     pr[k]+=(double)1/p;
@@ -1188,8 +1181,6 @@ int inits(void){// return 1 if all inits is success
 }
 
 void ff(void){
-
-    time_t sec=time(NULL);
 
     ui32 res,maxp=isqrt64(last_n);
 
@@ -1273,7 +1264,7 @@ void ff(void){
 
     ui64 I;
     ui64 large_block=(ui64)count_LEN_intervals*LEN;
-    //ui64 processed_large_blocks=0;
+    ui64 processed_large_blocks=0;
 
     int first_run=1;
     ui32 mid_res=0;
@@ -1292,9 +1283,10 @@ void ff(void){
         res_table[i]=primes[i]-(temp%primes[i]);
         if(res_table[i]==primes[i])res_table[i]=0;
     }
-
+	
+    time_t sec=time(NULL);
     for(;first_k<=last_k;first_k+=step_k){
-       time_t loop_sec=time(NULL);//******************************************************
+       time_t loop_sec=time(NULL);//For loop timing option
        if(!first_run){
         FILE* fout;
         fout=fopen("worktodo_gap.txt","w");
@@ -1336,9 +1328,6 @@ void ff(void){
             for(it=0;it<num_large_block+threads-1;it++){
                 #pragma omp parallel for schedule(dynamic,1)
                 for(j=0;j<threads;j++){
-
-//                ui32 id2=(it+2*threads-j)%(2*threads);
-//                ui32 id=(id2+threads)%(2*threads);
                 ui32 id2=(it+threads2-j)%threads2;
                 ui32 id=(id2+threads)%threads2;
 
@@ -1409,14 +1398,6 @@ void ff(void){
                for(G=0;G<range_k;G++)if(ans2[G]!=inf64){
                    ui64 tmp64=~ans2[G];
                    for(h=0;tmp64;tmp64>>=1,h++){// so now hunting for bit=1
- /*
-                       if((tmp64&0xffffffff)==0){tmp64>>=32;h+=32;}
-                       if((tmp64&0xffff)==0)    {tmp64>>=16;h+=16;}
-                       if((tmp64&0xff)==0)      {tmp64>>=8;h+=8;}
-                       if((tmp64&0xf)==0)       {tmp64>>=4;h+=4;}
-                       if((tmp64&0x3)==0)       {tmp64>>=2;h+=2;}
-                       if((tmp64&0x1)==0)       {tmp64>>=1;h++;}
-*/
 					   int shift = __builtin_ctzll(tmp64);
 					   h+=shift;
 					   tmp64>>=shift;
@@ -1475,12 +1456,21 @@ void ff(void){
             }
         }
 
-        //qsort(my_gap,ns,sizeof(GAP),comp);
-        int l1,l2;
-        // bubble sort
-        for(l1=0;l1<ns;l1++)for(l2=0;l1+l2+1<ns;l2++)if(my_gap[l2].p1>my_gap[l2+1].p1){
-            ui32 t1=my_gap[l2].gap;my_gap[l2].gap=my_gap[l2+1].gap;my_gap[l2+1].gap=t1;
-            ui64 t2=my_gap[l2].p1; my_gap[l2].p1=my_gap[l2+1].p1;  my_gap[l2+1].p1=t2;}
+#if 0
+		// quick sort
+        if (ns > 1) qsort(my_gap,ns,sizeof(GAP),comp);
+#else
+		// bubble sort - Gerbicz
+//        int l1,l2;
+//        for(l1=0;l1<ns;l1++)for(l2=0;l1+l2+1<ns;l2++)if(my_gap[l2].p1>my_gap[l2+1].p1){
+//           ui32 t1=my_gap[l2].gap;my_gap[l2].gap=my_gap[l2+1].gap;my_gap[l2+1].gap=t1;
+//           ui64 t2=my_gap[l2].p1; my_gap[l2].p1=my_gap[l2+1].p1;  my_gap[l2+1].p1=t2;}
+		// optimized bubble sort - Antonio
+		if (ns > 1) {int l2 = ns - 1; // So that if there are less than 2 gaps we skip the sort
+			while (l2) {int l3 = l2; l2 = 0; // l2 indicates if we did a swap or not, also used as an array index if a swap is performed
+				for (int l1 = 1; l1 <= l3; l1++) {if (my_gap[l1].p1 < my_gap[l1 - 1].p1) {l2 = l1-1;
+					GAP t1 = my_gap[l1]; my_gap[l1] = my_gap[l2]; my_gap[l2] = t1;}}}}
+#endif
 
         FILE* fout;
         fout=fopen("gap_solutions.txt","a+");
@@ -1491,19 +1481,22 @@ void ff(void){
         fclose(fout);
         free(sols);
 
- //       processed_large_blocks+=num_large_block;
- //       double rate=(double)processed_large_blocks/((double)(time(NULL)-sec)+0.01);// to avoid division by 0
-        double rate=(double)num_large_block/((double)(time(NULL)-loop_sec)+0.01);// to avoid division by 0
-        rate*=(double)large_block;
-        rate*=(double)mod;
+//        processed_large_blocks+=num_large_block;
+//		  ui64 nc = processed_large_blocks*large_block*mod;
+		ui64 nc = num_large_block*large_block*mod;
+//        double rate=(double)nc/((double)(time(NULL)-sec)+0.001);// to avoid division by 0
+        double rate=(double)nc/((double)(time(NULL)-loop_sec)+0.001);// to avoid division by 0
 
         ui64 nn=first_k+(ui64)num_large_block*large_block;
         if(nn>last_k)nn=last_k+1;
         nn*=mod;
         nn=imin64(nn,last_n);
+//        double rate= (double)(nn-n0)/((double)(time(NULL)-sec)+0.001);// to avoid division by 0
 
         printf("%.2lfe9 n/sec.; now at n=%llu; time=%ld sec.; date: ",rate/1e9,nn,time(NULL)-sec);
-        print_time();printf("\n");
+        print_time();//printf("\n");
+		double eta = (double)(last_n - nn)/rate;
+        printf("; ETA: %.2lfhrs\n",eta/3600);
         fflush(stdout);
 
         fout=fopen("gap_log.txt","a+");
