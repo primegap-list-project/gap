@@ -3,6 +3,10 @@
 //Fermat & Euler-Plumb PRP tests using Montgomery math
 //written by Dana Jacobsen
 
+// version 1.02     If you use the worktodo file at rerun, then             Robert Gerbicz
+//                  use all parameters from that (so we don't see
+//                  the command line for n1,n2,n,res1,res2,m1,m2)
+
 // version 1.01     Several improvements (new sieve strategy etc.)          Robert Gerbicz
 
 // version 0.05.g	Fixed quick sort, added optimized bubble sort.			Antonio Key
@@ -20,16 +24,16 @@
 
 // version 0.05		Bug fix.												Robert Gerbicz
 
-// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap7.c -lm
+// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap8.c -lm
 // don't forget -fopenmp  [for OpenMP]
 // use your own processor type, mine is skylake
 
 /*[Antonio/]
 my compile lines:
 For pre-Haswell Core i processors (Nehalem to Ivybridge):
-gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap7 gap7.c -lm
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap8 gap8.c -lm
 For Haswell or later Core i processors:
-gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -mavx2 -mtune=haswell -march=haswell -o gap7_haswell gap7.c -lm
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -mavx2 -mtune=haswell -march=haswell -o gap8_haswell gap8.c -lm
 If your version of gcc supports later processors then you can substitute in -mtune and -march for the appropriate processor.
 [\Antonio]
 */
@@ -64,7 +68,7 @@ If your version of gcc supports later processors then you can substitute in -mtu
 #include <immintrin.h>
 #endif
 
-#define version "1.01" // use (real) number!!!! do not put letters
+#define version "1.02" // use (real) number!!!! do not put letters
                        // or other characters in the version name
 
 typedef unsigned int           ui32;
@@ -1295,7 +1299,6 @@ void basic_segmented_sieve(ui32 n){// find primes up to max(n,65536)
 void get_params(void){
 
     int ret;
-    ui64 v;
     char u[256],w[256];
 
     FILE *fin;
@@ -1310,22 +1313,15 @@ void get_params(void){
             sscanf(w,"version=%lf",&vnum);
             if(w[0]!='v'||vnum<1.0){print_err();exit(1);}
 
-            ret=fscanf(fin,"%s",w);sscanf(w,"n1=%s",u);v=conv64(u);
-                if(set_n1&&v!=first_n){
-                printf("You given a different n1 with the -n1 switch from what is in the worktodo file,\nthat would mean a new range, not a continuation of the previous work. We exit.\n");
-                exit(1);}first_n=v;set_n1=1;
-            
-            ret=fscanf(fin,"%s",w);sscanf(w,"n2=%s",u);v=conv64(u);
-                if(set_n2&&v!=last_n){
-                printf("You given a different n2 with the -n2 switch from what is in the worktodo file,\nthat would mean a new range, not a continuation of the previous work. We exit.\n");
-                exit(1);}last_n=v;set_n2=1;
-
-            ret=fscanf(fin,"%s",w);if(!set_n)    {sscanf(w,"n=%s",u);n0=conv64(u);set_n=1;}
-            ret=fscanf(fin,"%s",w);if(!set_res1) {sscanf(w,"res1=%u",&RES1);set_res1=1;}
-            ret=fscanf(fin,"%s",w);if(!set_res2) {sscanf(w,"res2=%u",&RES2);set_res2=1;}
-            ret=fscanf(fin,"%s",w);if(!set_res)  {sscanf(w,"res=%u",&RES);set_res=1;}
-            ret=fscanf(fin,"%s",w);if(!set_m1)   {sscanf(w,"m1=%u",&M1);set_m1=1;}
-            ret=fscanf(fin,"%s",w);if(!set_m2)   {sscanf(w,"m2=%u",&M2);set_m2=1;}
+            printf("Read and use n1,n2,n,res1,res2,res,m1,m2 from the worktodo file.\n");
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"n1=%s",u);first_n=conv64(u);set_n1=1;}
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"n2=%s",u);last_n=conv64(u);set_n2=1;}
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"n=%s",u);n0=conv64(u);set_n=1;}
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"res1=%u",&RES1);set_res1=1;}
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"res2=%u",&RES2);set_res2=1;}
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"res=%u",&RES);set_res=1;}
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"m1=%u",&M1);set_m1=1;}
+            ret=fscanf(fin,"%s",w);if(1)   {sscanf(w,"m2=%u",&M2);set_m2=1;}
         }
         // else remove("worktodo_gap.txt"); note: we remove this file later
         fclose(fin);
