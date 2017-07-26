@@ -3,6 +3,8 @@
 //Fermat & Euler-Plumb PRP tests using Montgomery math
 //written by Dana Jacobsen
 
+// version 1.04     make a report using gap_solutions.txt file              Robert Gerbicz
+
 // version 1.03     Save the step value for k                               Robert Gerbicz
 //                  various cosmetic changes                                Antonio Key
 
@@ -27,16 +29,16 @@
 
 // version 0.05		Bug fix.												Robert Gerbicz
 
-// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap9.c -lm
+// my long compilation line: gcc -flto -m64 -fopenmp -O2 -fomit-frame-pointer -mavx2 -mtune=skylake -march=skylake -o gap gap10.c -lm
 // don't forget -fopenmp  [for OpenMP]
 // use your own processor type, mine is skylake
 
 /*[Antonio/]
 my compile lines:
 For pre-Haswell Core i processors (Nehalem to Ivybridge):
-gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap9 gap9.c -lm
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap10 gap10.c -lm
 For Haswell or later Core i processors:
-gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -mavx2 -mtune=haswell -march=haswell -o gap9_haswell gap9.c -lm
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -mavx2 -mtune=haswell -march=haswell -o gap10_haswell gap10.c -lm
 If your version of gcc supports later processors then you can substitute in -mtune and -march for the appropriate processor.
 [\Antonio]
 */
@@ -71,7 +73,7 @@ If your version of gcc supports later processors then you can substitute in -mtu
 #include <immintrin.h>
 #endif
 
-#define version "1.03" // use (real) number!!!! do not put letters
+#define version "1.04" // use (real) number!!!! do not put letters
                        // or other characters in the version name
 
 typedef unsigned int           ui32;
@@ -128,6 +130,7 @@ typedef unsigned long long int ui64;
                                 // note that p=2 is excluded from the sieving primes! (so not counted)
                                 // it should be divisible by 5, in the [5,165] interval
 // *******************
+void make_a_report(void);
 
 double used_memory; // in gigabytes
 double max_memory_gigabytes;// we'll set this, here 1 Gbyte=2^30 bytes=1073741824 bytes
@@ -179,6 +182,7 @@ static void usage(void){
     printf("  -mem m         the maximal memory usage is m GB (m can be any real number)\n");
     printf("  -t k           use k threads\n");
     printf("  -unknowngap d  smallest unknown gap is d (default=%d)\n",default_unknowngap);
+    printf("  -makereport    make a report (we'll automatically do it after a finished run)\n");
 }
 
 int set_n1;
@@ -195,6 +199,7 @@ int set_bs;
 int set_mem;
 int set_t;
 int set_stepk;
+int set_makereport;
 ui64 n0;
 
 ui32 ppi;// number of primes, excluded prime divisors of mod and the small tablesieving primes
@@ -900,6 +905,82 @@ si64 single_modinv(si64 a,si64 modulus)
  return (modulus - ps1);
 }
 
+typedef struct {
+ui32 gap,res;
+ui64 p1;
+}GAP2;
+
+int comp2(const void *a,const void *b){
+  GAP2* g1=(GAP2*)a;
+  GAP2* g2=(GAP2*)b;
+  if((g1->res)>(g2->res))   return 1;
+  if((g1->res)<(g2->res))   return (-1);
+  if((g1->gap)>(g2->gap))   return 1;
+  if((g1->gap)<(g2->gap))   return (-1);
+  return 0;
+}
+
+void make_a_report(void){
+    
+    FILE* fin;
+    fin=fopen("gap_solutions.txt","r");
+    
+    int gap,i,res,cnt=0,size=1,mingap,*bestgap;
+    ui32 r0,r1;
+    ui64 p1,p2,m=(ui64)M1*M2;
+    GAP2 *g;
+    g=(GAP2*)malloc(size*sizeof(GAP2));
+    bestgap=(int*)malloc(M2*sizeof(int));
+    
+    mingap=imin64(default_report_gap,unknowngap);
+    for(i=0;i<M2;i++)bestgap[i]=0;
+    while(fscanf(fin,"%u %llu",&gap,&p1)!=EOF){
+        p2=p1+gap;
+        r0=(1+(p1%m)/M1)%M2;
+        r1=(r0+1)%M2;
+        if(p2>=first_n&&p2<=last_n&&gap>=mingap&&((r0>=RES1&&r0<RES2)||(r1>=RES1&&r1<RES2))){
+           cnt++;
+           if(cnt>size){size*=2;g=(GAP2*)realloc(g,size*sizeof(GAP2));}
+           if(r0>=RES1&&r0<RES2)res=r0;
+           else                 res=r1;
+           g[cnt-1].gap=gap;
+           g[cnt-1].p1=p1;
+           g[cnt-1].res=res;
+           bestgap[res]=imax64(bestgap[res],gap);
+        }
+    }
+    fclose(fin);
+    qsort(g,cnt,sizeof(*g),comp2);
+    
+    int ns=0;
+    for(i=0;i<cnt;i++)if(i==0||g[i].p1!=g[i-1].p1)ns++;
+    
+    FILE* fout;
+    fout=fopen("gap_report.txt","w");
+    fprintf(fout,"Found %d different gaps; mingap=%d; interval=[%llu,%llu]; m1=%u;m2=%u; res=[%u,%u).\n",
+            ns,mingap,first_n,last_n,M1,M2,RES1,RES2);
+    
+    int best=0;
+    for(i=RES1;i<RES2;i++)best=imax64(best,bestgap[i]);
+    best=imin64(best,unknowngap);// it is possible that best>unknowngap, in this case we should set
+                                 // best=unknowngap to see all record gaps.
+    fprintf(fout,"Listing gaps>=%d\n",best);
+    for(i=0;i<cnt;i++)if(g[i].gap>=best&&(i==0||g[i].p1!=g[i-1].p1))fprintf(fout,"%u %llu\n",g[i].gap,g[i].p1);
+    
+    fprintf(fout,"Listing the best gaps for each res in [%u,%u):\n",RES1,RES2);
+    for(i=0,res=RES1;res<RES2;res++){
+        fprintf(fout,"res=%d\n",res);
+        for(;i<cnt&&g[i].res<=res;i++)
+           if(g[i].res==res&&(g[i].gap>=unknowngap||g[i].gap==bestgap[res])&&(i==0||g[i].p1!=g[i-1].p1))
+               fprintf(fout,"%u %llu\n",g[i].gap,g[i].p1);
+    }
+    fclose(fout);
+    printf("See the report in the gap_report.txt file.\n");
+            
+    free(bestgap);
+    free(g);
+}
+
 void init_smallp_segment_sieve(bucket *C,ui64 res){
 
     ui32 i;
@@ -1385,6 +1466,8 @@ void get_params(void){
         ret=scanf("%u",&M2);
         set_m2=1;
     }
+    
+    if(set_makereport){make_a_report();printf("We are exiting.\n");exit(0);}
 
     if(!set_numcoprime){
         printf("Give numcoprime (default=%d) ",default_numcoprime);
@@ -1404,9 +1487,9 @@ void get_params(void){
         set_bs=1;
     }
 
-//    if(sieve_bits_log2<16||bucket_size_log2>16||sieve_bits_log2<bucket_size_log2){// smart check
+// if(sieve_bits_log2<16||bucket_size_log2>16||sieve_bits_log2<bucket_size_log2){// smart check
     if(sieve_bits_log2<16||(sieve_bits_log2-bucket_size_log2)<3){// smart check
-	// Is the sieve too small or is the bucket size greater than the sieve size
+// Is the sieve too small or is the bucket size greater than the sieve size
         printf("Do you really want this(?), not swapped sb-bs values?\n");
         printf("sb is log2 of the sieving size in bits.\n");
         printf("bs is log2 of the one bucket size in bytes.\n");
@@ -2023,6 +2106,8 @@ void ff(void){
     free(TH);
     free(C);
     free(res_table);
+    
+    make_a_report();
 
     return;
 }
@@ -2046,6 +2131,7 @@ int main(int argc, char **argv){
     set_mem=0;
     set_t=0;
     set_stepk=0;
+    set_makereport=0;
     
     while((argc>1)&&(argv[1][0]=='-')){
       if(strcmp(argv[1],"-h")==0||strcmp(argv[1],"--help")==0){
@@ -2134,6 +2220,11 @@ int main(int argc, char **argv){
         unknowngap=atoi(argv[2]);
         argv+=2;
         argc-=2;
+      }
+      else if(argc>1&&strcmp(argv[1],"-makereport")==0){
+        set_makereport=1;
+        argv+=1;
+        argc-=1;
       }
       else{
 	    fprintf(stderr,"Unknown option: %s\n",argv[1]);
