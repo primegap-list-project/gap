@@ -3,6 +3,22 @@
 //Fermat & Euler-Plumb PRP tests using Montgomery math
 //written by Dana Jacobsen
 
+#define version "1.05" // use (real) number!!!! do not put letters
+                       // or other characters in the version name
+					   
+// version 1.05     Remove always false tests from prec_prime              Antonio Key
+//					and next_prime, alternative would be to replace
+//					with asserts as the progam failed elsewhere if
+//					the tests were ever true.
+//					Removed always true test in gap search
+//					Removed bound test on P2 in gap search
+//					Replaced result sort routine
+//					On screen display of process state (sieve or gap search)
+//					Let compiler decide if AVX2 is available to use
+//					update default_unknowngap
+//					Moved the #define version so that it was easier to check
+//					against the version comments and keep them consistant.
+
 // version 1.04     make a report using gap_solutions.txt file              Robert Gerbicz
 
 // version 1.03     Save the step value for k                               Robert Gerbicz
@@ -36,9 +52,9 @@
 /*[Antonio/]
 my compile lines:
 For pre-Haswell Core i processors (Nehalem to Ivybridge):
-gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap10 gap10.c -lm
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -msse4.2 -mtune=nehalem -march=nehalem -o gap11 gap11.c -lm
 For Haswell or later Core i processors:
-gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -mavx2 -mtune=haswell -march=haswell -o gap10_haswell gap10.c -lm
+gcc -static -m64 -fopenmp -O2 -frename-registers -fomit-frame-pointer -flto -mavx2 -mtune=haswell -march=haswell -o gap11_haswell gap11.c -lm
 If your version of gcc supports later processors then you can substitute in -mtune and -march for the appropriate processor.
 [\Antonio]
 */
@@ -56,7 +72,17 @@ If your version of gcc supports later processors then you can substitute in -mtu
 // so we can rediscover this gap for res=3684 and also for res=3685  (for m1=1190;m2=8151;numcoprime=27;unknowngap=1366)
 // (it is possible to discover the same gap at different res values, it is common for larger gaps)
 
-#define USE_AVX2 1
+// 1 if using GCC compiler or other compiler that defines  __AVX2__ for appropriate processors
+// 0 if compiler doesn't define __AVX2__ for appropriate processors
+#if 1
+	#if defined (__AVX2__)
+		#define USE_AVX2 1
+	#else
+		#define USE_AVX2 0
+	#endif
+#else
+	#define USE_AVX2 1 // use 0 if compiling for pre-Haswell processors
+#endif
 #define AVX2_BITS 256 // number of bits
 
 #include <stdio.h>
@@ -73,14 +99,10 @@ If your version of gcc supports later processors then you can substitute in -mtu
 #include <immintrin.h>
 #endif
 
-#define version "1.04" // use (real) number!!!! do not put letters
-                       // or other characters in the version name
-
 typedef unsigned int           ui32;
 typedef signed int             si32;
 typedef long long int          si64;
 typedef unsigned long long int ui64;
-
 
 // these are only used to show as a hint, code will ask these as input/switch/file,
 // so there is no need to modify these here.
@@ -94,7 +116,7 @@ typedef unsigned long long int ui64;
 
 #define default_bucket_size_log2 18 // in bytes, you can see this as "bs" in the code
 
-#define default_unknowngap 1366 // currently the smallest unknown case is gap=1366
+#define default_unknowngap 1382 // currently the smallest unknown case is gap=1382
                                 // see http://www.trnicely.net/gaps/gaplist.html
                                 // use the -unknowngap to modify this (you can set even a lower number also)
 
@@ -146,7 +168,6 @@ int MNS2 = 2 * MAX_NUM_SOLUTIONS;
 #define inf32 0xffffffff         // 2^32-1
 #define inf31 0x7fffffff         // 2^31-1
 #define DP30  1073741824.0       // 2.0^30
-#define MP64  0xffffffffffffffc5 // precprime(2^64)=2^64-59
 #define size_ui32 (sizeof(ui32)) // at least 4
 #define size_ui64 (sizeof(ui64)) // it should be 8
 
@@ -268,22 +289,6 @@ static const ui64 InvBits[64]={// InvBits[i]=2^64-1-2^i for masking
 
 static const int wheel30[8]={2,6,4,2,4,2,4,6};
 
-static const int table_prev_prime[128]={
-0,0,2,3,3,5,5,7,7,7,7,11,11,13,13,13,13,17,17,19,19,19,19,23,23,
-23,23,23,23,29,29,31,31,31,31,31,31,37,37,37,37,41,41,43,43,43,43,47,47,47,
-47,47,47,53,53,53,53,53,53,59,59,61,61,61,61,61,61,67,67,67,67,71,71,73,73,
-73,73,73,73,79,79,79,79,83,83,83,83,83,83,89,89,89,89,89,89,89,89,97,97,97,
-97,101,101,103,103,103,103,107,107,109,109,109,109,113,113,113,113,113,113,113,113,113,113,113,113,
-113,113,127};
-
-static const int table_next_prime[128]={
-2,2,2,3,5,5,7,7,11,11,11,11,13,13,17,17,17,17,19,19,23,23,23,23,29,
-29,29,29,29,29,31,31,37,37,37,37,37,37,41,41,41,41,43,43,47,47,47,47,53,53,
-53,53,53,53,59,59,59,59,59,59,61,61,67,67,67,67,67,67,71,71,71,71,73,73,79,
-79,79,79,79,79,83,83,83,83,89,89,89,89,89,89,97,97,97,97,97,97,97,97,101,101,
-101,101,103,103,107,107,107,107,109,109,113,113,113,113,127,127,127,127,127,127,127,127,127,127,127,
-127,127,127};
-
 // (i*inv64[i])%64==1 for odd i
 #if USE_AVX2
 static const int inv_table[256]={
@@ -331,6 +336,7 @@ ui64 mround_gen(ui64 n,ui64 m){return m*((n+m-1)/m);}
 ui64 mround_512(ui64 n){return mround_gen(n,512);}// return the smallest multiple of 512, not smaller than n
 ui64 precpower2(ui64 n){return Bits[bitlen(n)-1];}
 ui64 nextpower2(ui64 n){if(n<2)return 1;return Bits[bitlen(n-1)];}
+
 ui32 primes2[172]={2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,
 59,61,67,71,73,79,83,89,97,101,103,107,109,113,127,131,
 137,139,149,151,157,163,167,173,179,181,191,193,197,199,211,223,
@@ -570,38 +576,20 @@ ui32 fermatprp2(ui64 n){
 #define prec_prime(n)    prec_prime2(n)
 
 ui64 next_prime1(ui64 n){
-
-    if(n<128) return table_next_prime[n];
-    if(n>MP64)return 0;// fake, overflow in 64 bits
-
     ui32 i = 0;
     ui64 n2=n-1-(n%30);
-//    for(i=0;;i++){
-//        n2+=wheel30[i&7];
-//        if(n2>=n && trial_div(n2) && fermatprp2(n2))return n2;
 	while (n2<n) {n2+=wheel30[i&7]; i++;}
 	do {if(trial_div(n2))return n2; n2+=wheel30[i&7];} while (i++);
 }
 
 ui64 prec_prime1(ui64 n){
-
-    if(n<128)  return table_prev_prime[n];
-    if(n>=MP64)return MP64;
-
     ui32 i = 0;
     ui64 n2=n+31-(n%30);
-//    for(i=0;;i++){
-//        n2-=wheel30[i&7];
-//        if(n2<=n && trial_div(n2) && fermatprp2(n2))return n2;
 	while (n2>n) {n2-=wheel30[i&7]; i++;}
 	do {if(trial_div(n2))return n2; n2-=wheel30[i&7];} while (i++);
 }
 
 ui64 next_prime2(ui64 n){// note: do not call it for n<1024
-
-    if(n<128) return table_next_prime[n];
-    if(n>MP64)return 0;// fake, overflow in 64 bits
-
     ui32 shift;
     ui64 v,n2=n+((n+1)&1);
     for(;;n2+=128){
@@ -715,10 +703,6 @@ v&=b[n2%953];b+=953;v&=b[n2%967];b+=967;v&=b[n2%971];b+=971;v&=b[n2%977];b+=977;
 }
 
 ui64 prec_prime2(ui64 n){// note: do not call it for n<1024
-
-    if(n<128)  return table_prev_prime[n];
-    if(n>=MP64)return MP64;
-
     ui32 shift;
     ui64 v,n2,m2=n-((n+1)&1);
     for(;;m2-=128){
@@ -1008,7 +992,6 @@ void init_segment_sieve(ui64 res,bucket *B,ui32 *previous_bucket,
    st+=8*thread_id;
    if(st<(p1>>7))st+=8*threads;
 
-   int cc=0;
    for(i=0;(ui64)i*LEN<=(ui64)p2;i++)if(TH[i]==thread_id||i<=threads){
        ui32 q1=imax64(p1,i*LEN);
        ui32 q2=imin64(p2,i*LEN+(LEN-1));
@@ -1028,7 +1011,6 @@ void init_segment_sieve(ui64 res,bucket *B,ui32 *previous_bucket,
             p+=(e<<1);
           if(p<q1||p>q2||(mod%p==0))continue;
 
-           cc++;
            o=lin_solve(res,p);
 
           o2=o>>sieve_length_bits_log2;
@@ -1259,58 +1241,59 @@ void segmented_sieve(ui64 *sieve_array,
 
        if(o1!=0){
 
-       ui32 first_pos=((o1-1)>>sh3)<<sh3;// we really need o1-1
-       ui32 last_pos=o1;
-       ui32 off1=offset_bucket+1;
-       large_lists[offset_bucket]=0;
+		   ui32 first_pos=((o1-1)>>sh3)<<sh3;// we really need o1-1
+		   ui32 last_pos=o1;
+		   ui32 off1=offset_bucket+1;
+		   large_lists[offset_bucket]=0;
 
-       for(;;){
-       for(k=first_pos;k<last_pos;k++){
-           p=B[k].pr;
-           o=B[k].offset;
-           arr[o>>6]&=InvBits[o&63];
-               
-           o+=p-LEN;// o<LEN --> o+(p-LEN)<p<2^32, so there is no overflow in 32 bits! (furthermore p-LEN>0)
-           o2=((o>>sieve_length_bits_log2)+off1)&hash0;
-           pos=large_lists[o2];
+		   for(;;){
+			   for(k=first_pos;k<last_pos;k++){
+				   p=B[k].pr;
+				   o=B[k].offset;
+				   arr[o>>6]&=InvBits[o&63];
+					   
+				   o+=p-LEN;// o<LEN --> o+(p-LEN)<p<2^32, so there is no overflow in 32 bits! (furthermore p-LEN>0)
+				   o2=((o>>sieve_length_bits_log2)+off1)&hash0;
+				   pos=large_lists[o2];
 
-          if((pos&hash3)==0){
-             if(pos==0){
-                pos=available_buckets[head];
-                large_lists[o2]=pos;
-                // no need to set previous_bucket, first_bucket[] will show
-                // that this is the first, there is no previous
-                first_bucket[pos>>sh3]=1;
-                head++;if(head==size2)head=0;num_available_buckets--;
-             }
-          else{
-              tmp32=pos-primes_per_bucket;
-              pos=available_buckets[head];
-              large_lists[o2]=pos;
-              previous_bucket[pos>>sh3]=tmp32;
-              first_bucket[pos>>sh3]=0;
-              head++;if(head==size2)head=0;num_available_buckets--;
-              }
-              if(num_available_buckets<0){
-                printf("Bug, out of run in buckets.\n");
-                exit(1);
-              }
-         }
+				  if((pos&hash3)==0){
+					 if(pos==0){
+						 pos=available_buckets[head];
+						 large_lists[o2]=pos;
+						 // no need to set previous_bucket, first_bucket[] will show
+						 // that this is the first, there is no previous
+						 first_bucket[pos>>sh3]=1;
+						 head++;if(head==size2)head=0;num_available_buckets--;
+						}
+						else{
+						 tmp32=pos-primes_per_bucket;
+						 pos=available_buckets[head];
+						 large_lists[o2]=pos;
+						 previous_bucket[pos>>sh3]=tmp32;
+						 first_bucket[pos>>sh3]=0;
+						 head++;if(head==size2)head=0;num_available_buckets--;
+						}
+					 if(num_available_buckets<0){
+						 printf("Bug, out of run in buckets.\n");
+						 exit(1);
+						}
+					}
 
-           B[pos].pr=p;
-           B[pos].offset=o&hash2;
-           large_lists[o2]++;
-       }
-       o1=(o1-1)>>sh3;
-       o2=previous_bucket[o1];
-       available_buckets[(head+num_available_buckets)%size2]=o1<<sh3;// give back to the list this bucket
-       num_available_buckets++;
+				   B[pos].pr=p;
+				   B[pos].offset=o&hash2;
+				   large_lists[o2]++;
+				}
+			    o1=(o1-1)>>sh3;
+			    o2=previous_bucket[o1];
+			    available_buckets[(head+num_available_buckets)%size2]=o1<<sh3;// give back to the list this bucket
+			    num_available_buckets++;
 
-       if(first_bucket[o1])break;// no more bucket for this interval
-       first_pos=o2;
-       last_pos=o2+primes_per_bucket;
-       o1=o2+1;// because there will be (o1-1)>>sh3 we need to do this
-       }}
+			    if(first_bucket[o1])break;// no more bucket for this interval
+			    first_pos=o2;
+			    last_pos=o2+primes_per_bucket;
+			    o1=o2+1;// because there will be (o1-1)>>sh3 we need to do this
+            }
+		}
    }
    assert(num_available_buckets>=0);
 
@@ -1487,7 +1470,6 @@ void get_params(void){
         set_bs=1;
     }
 
-// if(sieve_bits_log2<16||bucket_size_log2>16||sieve_bits_log2<bucket_size_log2){// smart check
     if(sieve_bits_log2<16||(sieve_bits_log2-bucket_size_log2)<3){// smart check
 // Is the sieve too small or is the bucket size greater than the sieve size
         printf("Do you really want this(?), not swapped sb-bs values?\n");
@@ -1876,6 +1858,8 @@ void ff(void){
         temp=imin64(temp*mod,last_n);
         maxp=isqrt64(temp);
 
+		printf("Sieving\r");
+		fflush(stdout);
         for(i=num_coprime-1;i>=0;i--){
             if(save_nextprimetest&&i==(num_coprime/2)){
                ui64 I2=((ui64)num_iterations*LEN)/64;
@@ -1895,6 +1879,8 @@ void ff(void){
             si32 num_available_buckets[threads];
 
             ui64 it;
+			ui64 lb64=large_block/64;
+            ui64 c1=first_k*mod+((ui64)RES*M1);c1+=res;
             for(it=0;it<num_large_block+threads-1;it++){
                 #pragma omp parallel for schedule(dynamic,1)
                 for(j=0;j<threads;j++){
@@ -1903,18 +1889,18 @@ void ff(void){
 
                 if(id==threads)id=0;
                 else if(id==0)id=threads;
-
+				
+				ui64 jnp = (ui64)j*np;
                 bucket *B2=B+(ui64)j*num_bucket;
                 bucket *C2=C+(ui64)(id2%threads)*ppi2;
-                ui32 *previous_bucket2=previous_bucket+(ui64)j*np;
-                ui32 *available_buckets2=available_buckets+(ui64)j*np;
+                ui32 *previous_bucket2=previous_bucket+jnp;
+                ui32 *available_buckets2=available_buckets+jnp;
                 ui32 *large_lists2=large_lists+(ui64)j*num_sieve;
-                ui32 *first_bucket2=first_bucket+(ui64)j*np;
-                ui64 *sieve_array2=sieve_array+(ui64)id2*(large_block/64);
-                ui64 *sieve_array3=sieve_array+(ui64)id*(large_block/64);
+                ui32 *first_bucket2=first_bucket+jnp;
+                ui64 *sieve_array2=sieve_array+(ui64)id2*lb64;
+                ui64 *sieve_array3=sieve_array+(ui64)id*lb64;
 
                 ui64 c0=(ui64)(it+(id%threads))*large_block;
-                ui64 c1=first_k*mod+((ui64)RES*M1);c1+=res;
                 c0=c1+c0*mod;
                 
                 if(it==0){// init the sieves
@@ -1953,24 +1939,22 @@ void ff(void){
                     else            id3=it-j-threads;         
                 }
                 if(tst){//save the large block
-                       ui64 K,K2=large_block/64;
+                       ui64 K,K2=lb64;
                        ui64 *ans2=ans+(ui64)K2*id3;
-                       ui64 *sieve_array4=sieve_array+(ui64)(id3%(2*threads))*(large_block/64);
+                       ui64 *sieve_array4=sieve_array+(ui64)(id3%(2*threads))*K2;
                        for(K=0;K<K2;K++)ans2[K]|=sieve_array4[K];
                 }
                 }}
         }
 
+		printf("Searching\r");
+		fflush(stdout);
         int nt=threads;
-        ui64 cnt_findprp_prime[nt],cnt_empty_block[nt];
-
         ui64 *sols,K;
         ui32 num_solutions[nt];
         sols=(ui64*)malloc(MNS2*nt*sizeof(ui64));
         for(i=0;i<nt;i++){
-            num_solutions[i]=0;
-            cnt_findprp_prime[i]=0;
-            cnt_empty_block[i]=0;}
+		num_solutions[i]=0;}
 
         #pragma omp parallel for schedule(dynamic,1)
         for(K=0;K<I2;K+=1048576){
@@ -1988,13 +1972,11 @@ void ff(void){
                        ui64 pos=64*(K+G)+h;
 
                        ui64 mult=first_k+pos;
-                       if(mult>=first_k&&mult<=last_k){
+                       if(mult<=last_k){
                           ui64 n=(ui64)mult*mod;
                           n+=(ui64)RES*M1;
                           // there is no prime in [n,n+gap_delta)
                           ui64 p2=next_prime(n+gap_delta),p1;
-                          cnt_findprp_prime[th_id]++;
-                          cnt_empty_block[th_id]++;
                           if(saved&&(\
                               (parity&&(saved_ans[pos>>6]&Bits[pos&63]))||\
                               (parity==0&&(saved_ans2[pos>>6]&Bits[pos&63])))){
@@ -2002,8 +1984,7 @@ void ff(void){
                               if(p2-p1<unknowngap)continue;
                           }
                           p1=prec_prime(n-1);
-                          cnt_findprp_prime[th_id]++;
-                          if(p2-p1>=mingap&&p2<=last_n){
+                          if(p2-p1>=mingap){
                              ui32 o=MNS2*th_id+2*num_solutions[th_id];
                              sols[o]=p2-p1;
                              sols[o+1]=p1;
@@ -2025,35 +2006,26 @@ void ff(void){
                    }
                }
             }
-        ui64 c0=0,c1=0;
-        for(i=0;i<nt;i++)
-        {c0+=cnt_findprp_prime[i];c1+=cnt_empty_block[i];}
 
-        ui32 ns=0;for(i=0;i<nt;i++)ns+=num_solutions[i];
+		ui32 ns=0;for(i=0;i<nt;i++)ns+=num_solutions[i];
         GAP my_gap[ns];
 
+//		Sort the results as they are gathered from separate threads
         ns=0;
         for(j=0;j<nt;j++){
             ui32 k,o=MNS2*j;
             for(k=0;k<num_solutions[j];k++){
-				ui32 k2 = k<<1;
-                my_gap[ns].gap=(ui32)sols[o+k2];
-                my_gap[ns].p1=sols[o+k2+1];
+				ui32 jj,k2 = o + (k<<1);
+				GAP sort;
+                sort.gap=(ui32)sols[k2];
+                sort.p1=sols[k2+1];
+				for (jj = ns; jj > 0 && my_gap[jj-1].p1 > sort.p1; jj--) my_gap[jj] = my_gap[jj-1];
+				my_gap[jj] = sort;
                 ns++;
             }
         }
 
-// bubble sort - Gerbicz
-//        int l1,l2;
-//        for(l1=0;l1<ns;l1++)for(l2=0;l1+l2+1<ns;l2++)if(my_gap[l2].p1>my_gap[l2+1].p1){
-//           ui32 t1=my_gap[l2].gap;my_gap[l2].gap=my_gap[l2+1].gap;my_gap[l2+1].gap=t1;
-//           ui64 t2=my_gap[l2].p1; my_gap[l2].p1=my_gap[l2+1].p1;  my_gap[l2+1].p1=t2;}
-		// optimized bubble sort - Antonio
-		if (ns > 1) {int l2 = ns - 1; // So that if there are less than 2 gaps we skip the sort
-			while (l2) {int l3 = l2; l2 = 0; // l2 indicates if we did a swap or not, also used as an array index if a swap is performed
-				for (int l1 = 1; l1 <= l3; l1++) {if (my_gap[l1].p1 < my_gap[l1 - 1].p1) {l2 = l1-1;
-					GAP t1 = my_gap[l1]; my_gap[l1] = my_gap[l2]; my_gap[l2] = t1;}}}}
-
+        FILE* fout;
         fout=fopen("gap_solutions.txt","a+");
         for(i=0;i<ns;i++)if(i==0||my_gap[i].p1>my_gap[i-1].p1){
             printf("%u %llu\n",my_gap[i].gap,my_gap[i].p1);
@@ -2066,7 +2038,7 @@ void ff(void){
         nn=imin64(k2*mod,last_n);
         processed_k+=k2+1-first_k;
         double rate=((double)processed_k*M1)/((double)(time(NULL)-sec)+0.001);// to avoid division by zero
-        printf("%.2lfe9 n/sec.; time=%ld sec.; date: ",rate/1e9,time(NULL)-sec);
+        printf("   %.2lfe9 n/sec.; time=%ld sec.; date: ",rate/1e9,time(NULL)-sec);
         print_time();
         
         ui64 num_n=last_k+1-first_k;
