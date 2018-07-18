@@ -1767,10 +1767,7 @@ void ff(void){
        }
        first_iteration=0;
 	   ui64 end_n = (first_k+step_k)*mod;
-           if (end_n > first_n)
-	       end_n = imin64(end_n,last_n);
-           else
-               end_n = last_n;
+	   end_n = imin64(end_n,last_n);
 
        saved=0;
        saved2=0;
